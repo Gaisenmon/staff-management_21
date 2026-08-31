@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>凱旋門 ホール運営システム</title>
 <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
-<link rel="preconnect" href="https://gaisenmon-91d26-default-rtdb.firebaseio.com">
+<link rel="preconnect" href="https://akamo-staff-management-default-rtdb.asia-southeast1.firebasedatabase.app">
 <link rel="preconnect" href="https://identitytoolkit.googleapis.com">
 <link rel="dns-prefetch" href="https://www.gstatic.com">
-<link rel="dns-prefetch" href="https://gaisenmon-91d26-default-rtdb.firebaseio.com">
+<link rel="dns-prefetch" href="https://akamo-staff-management-default-rtdb.asia-southeast1.firebasedatabase.app">
 <style>
   :root{
     --charcoal:#241E19;
@@ -270,25 +270,30 @@
 
 <script type="module">
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getDatabase, ref, set, onValue, get } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
+/* ==============================================================
+   会社用(赤門)テンプレート
+   akamo-staff-management プロジェクトに接続済み。
+   現行チバNT店の本番プロジェクト(gaisenmon-91d26)とは完全に別物。
+   ============================================================== */
 const firebaseConfig = {
-  apiKey: "AIzaSyA4EhmsrNmjP9Lk_bbSZd52mk_PgfPN_sk",
-  authDomain: "gaisenmon-91d26.firebaseapp.com",
-  databaseURL: "https://gaisenmon-91d26-default-rtdb.firebaseio.com",
-  projectId: "gaisenmon-91d26",
-  storageBucket: "gaisenmon-91d26.firebasestorage.app",
-  messagingSenderId: "326228773653",
-  appId: "1:326228773653:web:fd4b1b9414c831952b371c"
+  apiKey: "AIzaSyDzUmUoZsTpV8PlTU-qRyDiByOImpOc_Kk",
+  authDomain: "akamo-staff-management.firebaseapp.com",
+  databaseURL: "https://akamo-staff-management-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "akamo-staff-management",
+  storageBucket: "akamo-staff-management.firebasestorage.app",
+  messagingSenderId: "249759074777",
+  appId: "1:249759074777:web:4b9b5332d22dae182bf1c8"
 };
 const fbApp = initializeApp(firebaseConfig);
 const db = getDatabase(fbApp);
-/* 将来複数店舗に対応する時のために、店名を含んだ場所にデータを置く。
-   stores/{店舗ID}/state という構造にしておけば、他店舗を追加する時にデータ構造を作り直さずに済む。 */
-const STORE_ID = "gaisenmon";
+/* 複数店舗に対応するため、店名を含んだ場所にデータを置く。
+   stores/{店舗ID}/state という構造にしておけば、他店舗を追加する時にデータ構造を作り直さずに済む。
+   (この構造は現行本番ファイルからすでに引き継いでいる) */
+const STORE_ID = "gaisenmon"; // 株式会社赤門の共通Firebaseプロジェクト内、凱旋門店舗のデータ置き場
 const stateRef = ref(db, `stores/${STORE_ID}/state`);
-const legacyStateRef = ref(db, "kaisenmonState"); // 以前の保存場所(移行用。移行後は読むだけ)
 const auth = getAuth(fbApp);
 /* ============================== マスタデータ ============================== */
 const POSITIONS = [
@@ -1759,19 +1764,10 @@ function startApp(){
   onValue(stateRef, async (snapshot)=>{
     const val = snapshot.val();
     if(val === null){
-      // 初回アクセス:新しい保存場所にまだ何も無い場合、
-      // 以前の場所(kaisenmonState)にデータが残っていればそれを引き継ぐ。無ければ新規シード。
+      // 初回アクセス:このプロジェクトにまだ何もデータが無い場合は新規シードする
+      // (会社用の新規Firebaseプロジェクトなので、現行本番からの移行ロジックは持たせていない)
       if(!firstLoadDone){
-        let migratedFromLegacy = false;
-        try{
-          const legacySnap = await get(legacyStateRef);
-          const legacyVal = legacySnap.val();
-          if(legacyVal){
-            state = legacyVal;
-            migratedFromLegacy = true;
-          }
-        }catch(e){ console.error("legacy data check failed", e); }
-        if(!migratedFromLegacy) state = defaultState();
+        state = defaultState();
         firstLoadDone = true;
         render();
         saveState();
