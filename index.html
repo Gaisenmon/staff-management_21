@@ -3,12 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>凱旋門 ホール運営システム</title>
-<link rel="preconnect" href="https://www.gstatic.com" crossorigin>
-<link rel="preconnect" href="https://akamo-staff-management-default-rtdb.asia-southeast1.firebasedatabase.app">
-<link rel="preconnect" href="https://identitytoolkit.googleapis.com">
-<link rel="dns-prefetch" href="https://www.gstatic.com">
-<link rel="dns-prefetch" href="https://akamo-staff-management-default-rtdb.asia-southeast1.firebasedatabase.app">
+<title>凱旋門 ATS評価システム</title>
 <style>
   :root{
     --charcoal:#241E19;
@@ -26,680 +21,252 @@
     --amber-bg:#FBF0DC;
     --gray-bg:#EFEAE1;
     --gray-ink:#9C9184;
-    --red:#B23A2E;
+    --cat-kitchen:#F5E7DA;
+    --cat-hall:#E4EEF1;
+    --cat-special:#EDE7F3;
+    --cat-shift:#FBF0DC;
+    --cat-attitude:#E4F1E6;
   }
   *{box-sizing:border-box;}
-  body{
-    margin:0;
-    background:var(--cream);
-    color:var(--ink);
-    font-family:"Hiragino Sans","Yu Gothic UI","Noto Sans JP",-apple-system,sans-serif;
-    -webkit-font-smoothing:antialiased;
-  }
+  body{margin:0;background:var(--cream);color:var(--ink);font-family:"Hiragino Sans","Yu Gothic UI","Noto Sans JP",-apple-system,sans-serif;-webkit-font-smoothing:antialiased;}
   .app{min-height:100vh;display:flex;flex-direction:column;}
-
-  header{
-    position:relative;
-    background:
-      repeating-linear-gradient(90deg, rgba(255,255,255,0.045) 0 2px, transparent 2px 26px),
-      repeating-linear-gradient(0deg, rgba(255,255,255,0.045) 0 2px, transparent 2px 26px),
-      linear-gradient(135deg, var(--charcoal), var(--charcoal-2));
-    color:#F2E9DC;
-    padding:22px 28px 0 28px;
-    border-bottom:4px solid var(--ember);
-  }
-  .brand{display:flex;align-items:center;gap:12px;margin-bottom:6px;flex-wrap:wrap;}
-  .brand .mark{
-    width:34px;height:34px;border-radius:8px;background:var(--ember);
-    display:flex;align-items:center;justify-content:center;
-    font-weight:900;font-size:16px;color:#241E19;flex:none;
-  }
-  .brand h1{font-size:19px;margin:0;font-weight:800;letter-spacing:.02em;}
-  .sync-row{display:flex;align-items:center;gap:10px;margin-bottom:14px;font-size:11.5px;color:#C8BBA8;}
-  .sync-dot{width:8px;height:8px;border-radius:50%;background:#5EA36B;flex:none;}
-  .sync-dot.off{background:#B23A2E;}
+  header{background:linear-gradient(135deg, var(--charcoal), var(--charcoal-2));color:#F2E9DC;padding:20px 26px 0 26px;border-bottom:4px solid var(--ember);}
+  .brand{display:flex;align-items:baseline;gap:12px;margin-bottom:12px;flex-wrap:wrap;}
+  .brand h1{font-size:18px;margin:0;font-weight:800;letter-spacing:.02em;}
+  .brand .tag{font-size:11px;color:#C8BBA8;border:1px solid rgba(255,255,255,.25);border-radius:20px;padding:2px 10px;}
   nav{display:flex;gap:4px;flex-wrap:wrap;}
-  nav button{
-    background:transparent;border:none;color:#D8CBB8;
-    padding:10px 16px;font-size:13.5px;font-weight:700;cursor:pointer;
-    border-radius:8px 8px 0 0;position:relative;top:1px;
-    font-family:inherit;
-  }
+  nav button{background:transparent;border:none;color:#D8CBB8;padding:10px 16px;font-size:13.5px;font-weight:700;cursor:pointer;border-radius:8px 8px 0 0;position:relative;top:1px;font-family:inherit;}
   nav button.active{background:var(--cream);color:var(--ink);}
   nav button:not(.active):hover{background:rgba(255,255,255,0.08);}
-
-  main{flex:1;max-width:1180px;width:100%;margin:0 auto;padding:26px 28px 60px;}
-
-  h2.title{font-size:20px;margin:0 0 18px;font-weight:800;}
-
-  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;margin-bottom:18px;}
-  .row{display:flex;gap:14px;flex-wrap:wrap;align-items:center;}
-  .grow{flex:1;min-width:180px;}
-
-  label{font-size:12px;color:var(--muted);font-weight:700;display:block;margin-bottom:5px;}
-  select, input[type=text], input[type=date], input[type=number], input[type=password], textarea{
-    width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;
-    font-size:14px;font-family:inherit;background:#fff;color:var(--ink);
-    height:40px;box-sizing:border-box;
-  }
-  /* iOSのselectはOS側が内部余白を持っていて、CSSでwidthを揃えても実際の見た目幅がズレる。
-     ネイティブの見た目を消して、矢印アイコンを自前で描画することで完全に揃える。 */
-  select{
-    -webkit-appearance:none;-moz-appearance:none;appearance:none;
-    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 20 20'><path d='M5 8l5 5 5-5' fill='none' stroke='%238A7F72' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>");
-    background-repeat:no-repeat;
-    background-position:right 12px center;
-    background-size:13px;
-    padding-right:32px;
-  }
-  /* iOSはinput[type=date]も独自の見た目(中央寄せ等)で描画するため上書き */
-  input[type=date]{
-    -webkit-appearance:none;appearance:none;
-    text-align:left;line-height:1.2;
-  }
-  textarea{resize:vertical;min-height:56px;height:auto;}
-  button.primary{
-    background:var(--ember);color:#fff;border:none;border-radius:8px;
-    padding:10px 20px;font-weight:800;font-size:13.5px;cursor:pointer;font-family:inherit;
-  }
-  button.primary:hover{background:var(--ember-dark);}
-  button.ghost{
-    background:transparent;color:var(--ember-dark);border:1px solid var(--ember);
-    border-radius:8px;padding:9px 16px;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;
-  }
-
+  main{flex:1;max-width:1400px;width:100%;margin:0 auto;padding:24px 24px 60px;}
+  .title-row{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px;}
+  h2.title{font-size:20px;margin:0;font-weight:800;}
+  .btn-group{display:flex;gap:6px;flex-wrap:wrap;}
+  .btn-group button{background:#fff;border:1px solid var(--line);color:var(--muted);border-radius:20px;padding:6px 16px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;}
+  .btn-group button.active{background:var(--ember);border-color:var(--ember);color:#fff;}
+  .period-row{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;}
+  .period-row .lbl{font-size:12px;color:var(--muted);font-weight:700;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:18px;}
   .table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;}
-  table{border-collapse:collapse;width:100%;font-size:12.5px;}
-  thead th{
-    background:var(--charcoal);color:#EFE5D6;position:sticky;top:0;
-    padding:10px 8px;text-align:center;font-weight:700;white-space:nowrap;
-  }
-  thead th.name-col{text-align:left;padding-left:14px;position:sticky;left:0;background:var(--charcoal);z-index:2;}
-  tbody td{padding:8px;text-align:center;border-bottom:1px solid var(--line);white-space:nowrap;}
-  tbody td.name-col{text-align:left;padding-left:14px;font-weight:700;position:sticky;left:0;background:var(--card);z-index:1;}
-  tbody tr:hover td.name-col{background:#FAF5EC;}
+  table{border-collapse:collapse;width:100%;font-size:11.5px;}
+  thead th{background:var(--charcoal);color:#EFE5D6;padding:7px 6px;text-align:center;font-weight:700;white-space:nowrap;}
+  thead th.name-col{text-align:left;padding-left:12px;}
+  thead tr.cat-row th{font-size:10.5px;background:var(--charcoal-2);border-left:2px solid var(--charcoal);}
+  tbody td{padding:6px;text-align:center;border-bottom:1px solid var(--line);white-space:nowrap;}
+  tbody td.name-col{text-align:left;padding-left:12px;font-weight:700;}
   tbody tr:hover{background:#FAF5EC;}
-  .rank-chip{
-    display:inline-block;font-size:10.5px;font-weight:800;color:var(--muted);
-    background:var(--gray-bg);padding:1px 7px;border-radius:20px;margin-left:6px;
-  }
-  .score-cell{
-    display:inline-flex;align-items:center;justify-content:center;
-    width:30px;height:24px;border-radius:6px;font-weight:800;font-variant-numeric:tabular-nums;
-  }
+  .aff-chip{display:inline-block;font-size:10px;font-weight:800;padding:1px 8px;border-radius:20px;background:var(--gray-bg);color:var(--muted);}
+  .aff-chip.hall{background:#E4EEF1;color:#2F6B7A;}
+  .aff-chip.kitchen{background:#F5E7DA;color:var(--ember-dark);}
+  .aff-chip.both{background:var(--amber-bg);color:var(--amber);}
+  .score-cell{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:20px;border-radius:5px;font-weight:800;font-variant-numeric:tabular-nums;padding:0 3px;}
   .score-cell.ready{background:var(--green-bg);color:var(--green);}
   .score-cell.mid{background:var(--amber-bg);color:var(--amber);}
   .score-cell.low{background:var(--gray-bg);color:var(--gray-ink);}
-  .legend{display:flex;gap:16px;margin:14px 2px 0;font-size:12px;color:var(--muted);flex-wrap:wrap;align-items:center;}
-  .legend span{display:inline-flex;align-items:center;gap:6px;}
-  .dot{width:11px;height:11px;border-radius:3px;display:inline-block;}
+  .legend{display:flex;gap:14px;margin:12px 2px 0;font-size:11.5px;color:var(--muted);flex-wrap:wrap;align-items:center;}
+  .legend span{display:inline-flex;align-items:center;gap:5px;}
+  .dot{width:10px;height:10px;border-radius:3px;display:inline-block;}
+  .staff-picker{max-width:360px;margin-bottom:14px;}
+  label{font-size:12px;color:var(--muted);font-weight:700;display:block;margin-bottom:5px;}
+  select, textarea{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;background:#fff;color:var(--ink);}
+  textarea{resize:vertical;min-height:90px;}
+  .meta-row{display:flex;gap:20px;flex-wrap:wrap;margin-bottom:16px;font-size:12.5px;color:var(--muted);}
+  .meta-row strong{color:var(--ink);}
 
-  .staff-picker{max-width:340px;margin-bottom:18px;}
-  .pos-edit-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;}
-  .pos-edit{background:var(--cream);border:1px solid var(--line);border-radius:10px;padding:10px 12px;}
-  .pos-edit .lbl{font-size:12px;font-weight:800;margin-bottom:2px;}
-  .pos-edit .name{font-size:10.5px;color:var(--muted);margin-bottom:6px;min-height:14px;}
-  .pos-edit input[type=range]{width:100%;accent-color:var(--ember);}
-  .pos-edit .val{font-size:13px;font-weight:800;color:var(--ember-dark);text-align:right;}
-
-  .item-row{
-    display:flex;justify-content:space-between;align-items:flex-start;gap:12px;
-    padding:12px 4px;border-bottom:1px solid var(--line);font-size:13.5px;
+  /* 紙の評価票を模した表 */
+  .paper-table-wrap{overflow-x:auto;border:1px solid var(--charcoal);border-radius:6px;}
+  table.paper-table{border-collapse:collapse;width:100%;min-width:640px;}
+  table.paper-table td{border:1px solid var(--line);padding:0;vertical-align:middle;}
+  table.paper-table td.cat-col{
+    width:110px;font-weight:800;font-size:12.5px;text-align:center;padding:10px 6px;
+    border-right:2px solid var(--charcoal);writing-mode:horizontal-tb;
   }
-  .item-row:last-child{border-bottom:none;}
-  .item-row .meta{color:var(--muted);font-size:12px;margin-top:2px;}
-  .badge{
-    font-size:11px;font-weight:800;padding:2px 9px;border-radius:20px;
-    background:var(--amber-bg);color:var(--amber);white-space:nowrap;
-  }
-  .badge.done{background:var(--green-bg);color:var(--green);}
-  .badge.overdue{background:#FBE4E1;color:var(--red);}
-  .badge.progress{background:var(--amber-bg);color:var(--amber);}
-  .section-head{font-weight:800;font-size:13px;margin:18px 0 6px;color:var(--ink);display:flex;align-items:center;gap:8px;}
-  .section-head:first-child{margin-top:0;}
-  .count-pill{background:var(--gray-bg);color:var(--muted);font-size:11px;font-weight:800;padding:1px 8px;border-radius:20px;}
-  .edit-form{background:var(--cream);border:1px solid var(--line);border-radius:10px;padding:12px;width:100%;display:flex;flex-direction:column;gap:8px;}
-  .edit-form .row2{display:flex;gap:8px;}
-  .item-actions{display:flex;gap:6px;flex-wrap:wrap;flex:none;}
-  button.ghost.small{padding:6px 11px;font-size:12px;}
-  .empty{color:var(--muted);font-size:13px;padding:18px 4px;text-align:center;}
+  table.paper-table td.item-col{width:150px;font-weight:700;font-size:13px;padding:8px 12px;background:#fff;}
+  table.paper-table td.opts-col{padding:6px 10px;background:#fff;}
+  .cat-kitchen{background:var(--cat-kitchen);}
+  .cat-hall{background:var(--cat-hall);}
+  .cat-special{background:var(--cat-special);}
+  .cat-shift{background:var(--cat-shift);}
+  .cat-attitude{background:var(--cat-attitude);}
+  .chip-group{display:flex;gap:6px;flex-wrap:wrap;}
+  .chip-btn{width:32px;height:32px;border-radius:50%;border:2px solid var(--line);background:#fff;font-weight:800;font-size:12.5px;color:var(--muted);cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;}
+  .chip-btn.selected{background:var(--ember);border-color:var(--ember);color:#fff;}
 
-  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
-  @media (max-width:820px){.two-col{grid-template-columns:1fr;} .app{overflow-x:hidden;}}
-
-  /* ---- スマホ表示(自動判定 or 右上ボタンで手動切り替え) ---- */
-  body.mobile-mode header{padding:14px 14px 0 14px;}
-  body.mobile-mode .brand h1{font-size:15px;}
-  body.mobile-mode .brand img{height:32px;}
-  body.mobile-mode main{padding:14px 14px 40px;}
-  body.mobile-mode h2.title{font-size:17px;}
-  body.mobile-mode .card{padding:14px;border-radius:12px;}
-
-  /* タブは折り返さず横スクロールに */
-  body.mobile-mode nav{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px;}
-  body.mobile-mode nav button{padding:9px 12px;font-size:12.5px;flex:none;}
-
-  /* iOSでの自動ズームを防ぐため入力系は16px */
-  body.mobile-mode select, body.mobile-mode input[type=text], body.mobile-mode input[type=date],
-  body.mobile-mode input[type=number], body.mobile-mode input[type=password], body.mobile-mode textarea{font-size:16px;}
-
-  /* 目標・ログ・スタッフ行はボタンを下に落として縦積みに */
-  body.mobile-mode .item-row{flex-direction:column;}
-  body.mobile-mode .item-actions{width:100%;}
-  body.mobile-mode .item-actions button{flex:1;}
-
-  body.mobile-mode .pos-edit-grid{grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;}
-  body.mobile-mode table{font-size:11.5px;}
-  body.mobile-mode .score-cell{width:26px;height:22px;}
-
-  .mode-toggle{
-    position:absolute;top:20px;right:28px;display:flex;gap:2px;
-    background:rgba(255,255,255,0.08);border-radius:20px;padding:3px;
-  }
-  .mode-toggle button{
-    background:transparent;border:none;color:#D8CBB8;font-size:11.5px;font-weight:700;
-    padding:5px 12px;border-radius:16px;cursor:pointer;font-family:inherit;
-  }
-  .mode-toggle button.active{background:var(--ember);color:#fff;}
-  body.mobile-mode .mode-toggle{position:static;margin-bottom:10px;align-self:flex-start;}
-
-  .save-toast{
-    position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);
-    background:var(--charcoal);color:#fff;padding:10px 20px;border-radius:30px;
-    font-size:13px;font-weight:700;opacity:0;transition:.25s;pointer-events:none;z-index:50;
-  }
+  button.primary{background:var(--ember);color:#fff;border:none;border-radius:8px;padding:10px 20px;font-weight:800;font-size:13.5px;cursor:pointer;font-family:inherit;}
+  button.primary:hover{background:var(--ember-dark);}
+  .save-toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--charcoal);color:#fff;padding:10px 20px;border-radius:30px;font-size:13px;font-weight:700;opacity:0;transition:.25s;pointer-events:none;z-index:50;}
   .save-toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
-
-  .login-screen{
-    min-height:100vh;display:flex;align-items:center;justify-content:center;
-    background:
-      repeating-linear-gradient(90deg, rgba(255,255,255,0.045) 0 2px, transparent 2px 26px),
-      repeating-linear-gradient(0deg, rgba(255,255,255,0.045) 0 2px, transparent 2px 26px),
-      linear-gradient(135deg, var(--charcoal), var(--charcoal-2));
-    padding:20px;
-  }
-  .login-card{
-    background:var(--card);border-radius:16px;padding:32px 28px;width:100%;max-width:340px;
-    text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.35);
-  }
-  .login-card img{height:44px;width:auto;border-radius:5px;margin-bottom:14px;}
-  .login-card h2{font-size:17px;margin:0 0 4px;font-weight:800;color:var(--ink);}
-  .login-card p{font-size:12.5px;color:var(--muted);margin:0 0 18px;}
-  .login-card input{margin-bottom:10px;height:42px;box-sizing:border-box;}
-  .login-card button{width:100%;margin-top:4px;}
-  .login-error{color:var(--red);font-size:12.5px;margin-top:10px;min-height:16px;}
-
-  .logout-btn{
-    background:transparent;border:1px solid rgba(255,255,255,0.25);color:#EFE5D6;
-    border-radius:20px;padding:3px 12px;font-size:11px;cursor:pointer;font-family:inherit;
-  }
+  .sync-row{display:flex;align-items:center;gap:10px;margin-bottom:12px;font-size:11px;color:#C8BBA8;}
+  .sync-dot{width:8px;height:8px;border-radius:50%;background:#5EA36B;flex:none;}
+  .sync-dot.off{background:#B23A2E;}
 </style>
 </head>
 <body>
-<div class="login-screen" id="login-screen">
-  <div class="login-card">
-    <img src="data:image/png;base64,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" alt="凱旋門ロゴ">
-    <h2>凱旋門 ホール運営システム</h2>
-    <p>続けるにはログインが必要です</p>
-    <input type="text" id="login-code" placeholder="社員コード" autocomplete="username">
-    <input type="password" id="login-password" placeholder="パスワード" autocomplete="current-password">
-    <button class="primary" id="login-btn">ログイン</button>
-    <div class="login-error" id="login-error"></div>
-  </div>
-</div>
-<div class="app" id="app" style="display:none;">
+<div class="app" id="app">
   <header>
-    <div class="mode-toggle" id="mode-toggle">
-      <button id="mode-pc">パソコン</button>
-      <button id="mode-sp">スマホ</button>
-    </div>
-    <div class="brand">
-      <img src="data:image/png;base64,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" alt="凱旋門ロゴ" style="height:40px;width:auto;border-radius:4px;">
-      <h1>凱旋門 ホール運営システム</h1>
-    </div>
-    <div class="sync-row">
-      <span class="sync-dot" id="sync-dot"></span>
-      <span id="sync-label">同期状態を確認中...</span>
-      <button class="logout-btn" id="logout-btn">ログアウト</button>
-    </div>
+    <div class="brand"><h1>凱旋門 ATS評価システム</h1></div>
+    <div class="sync-row"><span class="sync-dot" id="sync-dot"></span><span id="sync-label">同期状態を確認中...</span></div>
     <nav id="tabs"></nav>
   </header>
   <main id="main"></main>
 </div>
 <div class="save-toast" id="toast">保存しました</div>
 
-<script type="module">
-import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
-import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-
-/* ==============================================================
-   会社用(赤門)テンプレート
-   akamo-staff-management プロジェクトに接続済み。
-   現行チバNT店の本番プロジェクト(gaisenmon-91d26)とは完全に別物。
-   ============================================================== */
-const firebaseConfig = {
-  apiKey: "AIzaSyDzUmUoZsTpV8PlTU-qRyDiByOImpOc_Kk",
-  authDomain: "akamo-staff-management.firebaseapp.com",
-  databaseURL: "https://akamo-staff-management-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "akamo-staff-management",
-  storageBucket: "akamo-staff-management.firebasestorage.app",
-  messagingSenderId: "249759074777",
-  appId: "1:249759074777:web:4b9b5332d22dae182bf1c8"
-};
-const fbApp = initializeApp(firebaseConfig);
-const db = getDatabase(fbApp);
-/* 複数店舗に対応するため、店名を含んだ場所にデータを置く。
-   stores/{店舗ID}/state という構造にしておけば、他店舗を追加する時にデータ構造を作り直さずに済む。
-   (この構造は現行本番ファイルからすでに引き継いでいる) */
-const STORE_ID = "gaisenmon"; // 株式会社赤門の共通Firebaseプロジェクト内、凱旋門店舗のデータ置き場
-const stateRef = ref(db, `stores/${STORE_ID}/state`);
-const auth = getAuth(fbApp);
-/* ============================== マスタデータ ============================== */
-const POSITIONS = [
-  {code:"SL",  name:"サーチライト",     desc:"全ポジションフォロー。全体を見ながら各ポジションへのフォローと指示だしができる。"},
-  {code:"IR",  name:"入り口",          desc:"予約管理・ご案内・レジ・電話・オーダー・セット・スタンバイ"},
-  {code:"ON",  name:"オンリー",         desc:"オーダー・スタンバイ・セット・電話・レジ"},
-  {code:"HO",  name:"ホール(前半卓)",   desc:"オンリーの前半卓(1〜13番)担当"},
-  {code:"KO",  name:"個室(後半卓)",     desc:"オンリーの後半卓(14〜22番・個室)担当"},
-  {code:"ST",  name:"セットスタンバイ",  desc:"セット・スタンバイ"},
-  {code:"DS",  name:"出し",            desc:"出し・料理振り分け・提供"},
-  {code:"DR",  name:"ドリンカー",       desc:"ドリンク/デザート作成・提供"},
-  {code:"RH",  name:"料理運び",         desc:"料理提供・出しフォロー"},
-  {code:"DH",  name:"ドリンク運び",      desc:"ドリンク/デザート提供・ドリンカーフォロー"},
-  {code:"RDH", name:"料理ドリンク運び",  desc:"料理・ドリンク提供(兼任)"},
+<script>
+/* ============================== 評価項目マスタ ============================== */
+const CATEGORIES = [
+  { id:"kitchen",  label:"①キッチン",   items:[
+    {name:"洗い場", max:4},{name:"サラキ", max:4},{name:"ファイヤー", max:4},{name:"バック", max:4},{name:"センター", max:4},
+  ]},
+  { id:"hall",     label:"②ホール",     items:[
+    {name:"オンリー", max:4},{name:"ドリンカー", max:4},{name:"出し", max:4},{name:"ご案内・電話", max:4},{name:"レジ", max:4},
+  ]},
+  { id:"special",  label:"③特殊技能",   items:[
+    {name:"夜集計", max:4},{name:"予約管理", max:5},{name:"従業員統率", max:5},{name:"肉カット", max:5},{name:"教育・評価", max:3},
+  ]},
+  { id:"shift",    label:"④シフト協力", items:[
+    {name:"シフト作成", max:5},{name:"土日祝60%/月", max:1},{name:"イベント参加", max:1},{name:"不足協力", max:1},{name:"長期繁忙期70%", max:1},
+  ]},
+  { id:"attitude", label:"⑤勤務態度",   items:[
+    {name:"遅刻・欠勤", max:1},{name:"シフト提出", max:1},{name:"服務規律", max:1},{name:"姿勢のルール", max:1},{name:"行事参加", max:1},
+  ]},
 ];
-const TASK_ITEMS = ["セット","スタンバイ","アフター","オーダー","ご案内","レジ","電話","予約管理","出し","ドリンカー","料理運び","ドリンク運び","従業員統率","ラスト","集計"];
+const ALL_ITEMS = CATEGORIES.flatMap(c => c.items.map(it => ({...it, categoryId:c.id})));
+const PERIODS = ["4月","7月","10月","1月"]; // 店長印のタイミング(年4回)に合わせた評価時期
+function starAt(max){ return Math.min(3, max); }
+function scoreClass(value, max){
+  const th = starAt(max);
+  if(value >= th) return "ready";
+  if(value >= 1) return "mid";
+  return "low";
+}
+function achievementPct(scores){
+  const vals = ALL_ITEMS.map(it => (scores[it.name] ?? 0) / it.max);
+  return Math.round((vals.reduce((a,b)=>a+b,0) / vals.length) * 100);
+}
+const EVALUATORS = ["青木","井上","熊本","寺澤","木内","篠原","和田"];
+function starCount(scores){
+  return ALL_ITEMS.filter(it => scoreClass(scores[it.name] ?? 0, it.max) === "ready").length;
+}
+function totalScore(periodData){
+  return starCount(periodData.scores) + (periodData.bonus ?? 0);
+}
+function emptyScores(){
+  const s = {};
+  ALL_ITEMS.forEach(it => { s[it.name] = 0; });
+  return s;
+}
+function emptyPeriods(){
+  const p = {};
+  PERIODS.forEach(period => { p[period] = { scores: emptyScores(), comment:"", evaluator:"", bonus:0 }; });
+  return p;
+}
 
-const READY_THRESHOLD = 3; // 土日OK = 独り立ちの目安
+/* ============================== スタッフマスタ(凱旋門ATS評価.xlsxより抽出) ============================== */
+const STAFF_SEED = [
+  {id:"1", code:"28211", name:"下條 俊平", employType:"社員", affiliation:"両方", hireDate:"2017-10-16"},
+  {id:"2", code:"100672", name:"青木 俊樹", employType:"社員", affiliation:"両方", hireDate:"2014-04-01"},
+  {id:"3", code:"168206", name:"井上 ゆかり", employType:"社員", affiliation:"両方", hireDate:"2022-04-12"},
+  {id:"4", code:"210005", name:"近藤 恵", employType:"パート", affiliation:"ホール", hireDate:"2022-06-26"},
+  {id:"5", code:"210027", name:"大芝 朋美", employType:"パート", affiliation:"両方", hireDate:"2022-07-12"},
+  {id:"6", code:"210037", name:"岩田 梨沙", employType:"アルバイト", affiliation:"両方", hireDate:"2022-07-27"},
+  {id:"7", code:"210057", name:"神崎 里桜", employType:"アルバイト", affiliation:"ホール", hireDate:"2022-08-08"},
+  {id:"8", code:"210059", name:"金山 瑞慧", employType:"パート", affiliation:"ホール", hireDate:"2022-08-08"},
+  {id:"9", code:"210062", name:"佐藤 愛恵", employType:"パート", affiliation:"キッチン", hireDate:"2022-08-10"},
+  {id:"10", code:"210084", name:"中村 心咲", employType:"アルバイト", affiliation:"ホール", hireDate:"2023-06-09"},
+  {id:"11", code:"210089", name:"齋藤 真美", employType:"パート", affiliation:"キッチン", hireDate:"2023-06-25"},
+  {id:"12", code:"210103", name:"熊本 美羽", employType:"アルバイト", affiliation:"両方", hireDate:"2023-11-11"},
+  {id:"13", code:"210105", name:"縫田 桜", employType:"アルバイト", affiliation:"ホール", hireDate:"2023-11-11"},
+  {id:"14", code:"210106", name:"寺澤 一花", employType:"アルバイト", affiliation:"キッチン", hireDate:"2023-11-11"},
+  {id:"15", code:"210107", name:"木内 健太", employType:"アルバイト", affiliation:"ホール", hireDate:"2023-11-30"},
+  {id:"16", code:"210112", name:"平川 幸太桜", employType:"アルバイト", affiliation:"ホール", hireDate:"2024-02-19"},
+  {id:"17", code:"210113", name:"緒方 志旺", employType:"アルバイト", affiliation:"キッチン", hireDate:"2024-02-19"},
+  {id:"18", code:"210117", name:"平田 香織", employType:"パート", affiliation:"両方", hireDate:"2024-03-25"},
+  {id:"19", code:"210118", name:"村田 瑛海", employType:"アルバイト", affiliation:"キッチン", hireDate:"2024-03-25"},
+  {id:"20", code:"210121", name:"篠原 令磨", employType:"アルバイト", affiliation:"ホール", hireDate:"2024-05-06"},
+  {id:"21", code:"210122", name:"和田 鈴帆", employType:"アルバイト", affiliation:"ホール", hireDate:"2024-05-06"},
+  {id:"22", code:"210124", name:"ｱｼﾄﾞｩ", employType:"アルバイト", affiliation:"キッチン", hireDate:"2024-05-06"},
+  {id:"23", code:"210126", name:"市川 真聖", employType:"アルバイト", affiliation:"ホール", hireDate:"2024-05-06"},
+  {id:"24", code:"210134", name:"福田 テレシア", employType:"パート", affiliation:"キッチン", hireDate:"2024-08-22"},
+  {id:"25", code:"210135", name:"片見 凛", employType:"アルバイト", affiliation:"キッチン", hireDate:"2024-08-22"},
+  {id:"26", code:"210137", name:"永瀬 泉", employType:"パート", affiliation:"キッチン", hireDate:"2024-09-11"},
+  {id:"27", code:"210141", name:"清水 由椛", employType:"アルバイト", affiliation:"ホール", hireDate:"2024-11-11"},
+  {id:"28", code:"210143", name:"梶川 来星", employType:"アルバイト", affiliation:"キッチン", hireDate:"2024-11-18"},
+  {id:"29", code:"210145", name:"小針 陽菜", employType:"アルバイト", affiliation:"ホール", hireDate:"2024-11-18"},
+  {id:"30", code:"210148", name:"山口 優輝", employType:"アルバイト", affiliation:"ホール", hireDate:"2025-01-29"},
+  {id:"31", code:"210152", name:"長田 菜摘", employType:"パート", affiliation:"キッチン", hireDate:"2025-03-03"},
+  {id:"32", code:"210154", name:"伊藤 心美", employType:"アルバイト", affiliation:"ホール", hireDate:"2025-03-24"},
+  {id:"33", code:"210155", name:"中村 彩乃", employType:"アルバイト", affiliation:"ホール", hireDate:"2025-03-03"},
+  {id:"34", code:"210159", name:"徳永 唯花", employType:"アルバイト", affiliation:"ホール", hireDate:"2025-03-31"},
+  {id:"35", code:"210162", name:"松元 綾子", employType:"パート", affiliation:"ホール", hireDate:"2025-04-16"},
+  {id:"36", code:"210163", name:"下平 奈々", employType:"アルバイト", affiliation:"ホール", hireDate:"2025-04-30"},
+  {id:"37", code:"210164", name:"阿部 芽香", employType:"アルバイト", affiliation:"キッチン", hireDate:"2025-05-10"},
+  {id:"38", code:"210166", name:"甲斐 裕子", employType:"パート", affiliation:"ホール", hireDate:"2025-05-30"},
+  {id:"39", code:"210167", name:"飯泉 彩衣", employType:"アルバイト", affiliation:"キッチン", hireDate:"2025-06-21"},
+  {id:"40", code:"210168", name:"中川原 陽梨", employType:"アルバイト", affiliation:"キッチン", hireDate:"2025-06-21"},
+  {id:"41", code:"210169", name:"新井 秋音", employType:"アルバイト", affiliation:"キッチン", hireDate:"2025-07-05"},
+  {id:"42", code:"210171", name:"大塚 梨乃", employType:"アルバイト", affiliation:"ホール", hireDate:"2025-08-18"},
+  {id:"43", code:"210177", name:"近藤 志優", employType:"アルバイト", affiliation:"キッチン", hireDate:"2025-10-04"},
+  {id:"44", code:"210178", name:"下山 彩乃", employType:"パート", affiliation:"キッチン", hireDate:"2025-11-22"},
+  {id:"45", code:"210179", name:"藤田 夢羽", employType:"アルバイト", affiliation:"ホール", hireDate:"2025-11-22"},
+  {id:"46", code:"210180", name:"吉田 嵩", employType:"アルバイト", affiliation:"キッチン", hireDate:"2026-02-07"},
+  {id:"47", code:"210183", name:"下田 陽斗", employType:"アルバイト", affiliation:"ホール", hireDate:"2026-04-10"},
+  {id:"48", code:"210185", name:"尾松 祐理", employType:"アルバイト", affiliation:"ホール", hireDate:"2026-04-10"},
+  {id:"49", code:"210187", name:"道満 友菜", employType:"アルバイト", affiliation:"キッチン", hireDate:"2026-04-18"},
+  {id:"50", code:"210188", name:"松永 莉奈", employType:"アルバイト", affiliation:"キッチン", hireDate:"2026-05-01"},
+  {id:"51", code:"210192", name:"山田 暖真", employType:"アルバイト", affiliation:"キッチン", hireDate:"2026-05-01"},
+  {id:"52", code:"210193", name:"渡邉 心", employType:"アルバイト", affiliation:"キッチン", hireDate:"2026-06-01"},
+  {id:"53", code:"210194", name:"小山 さくら", employType:"アルバイト", affiliation:"ホール", hireDate:"2026-07-01"},
+  {id:"54", code:"210195", name:"戸塚 亮輔", employType:"アルバイト", affiliation:"ホール", hireDate:"2026-07-01"},
+  {id:"55", code:"210196", name:"大森 はるか", employType:"アルバイト", affiliation:"ホール", hireDate:"2026-07-18"},
+  {id:"56", code:"210197", name:"古屋 珠里", employType:"アルバイト", affiliation:"キッチン", hireDate:"2026-08-02"},
+  {id:"57", code:"210198", name:"浅田 りの", employType:"アルバイト", affiliation:"キッチン", hireDate:"2026-08-08"},
+  {id:"58", code:"210199", name:"河口 こころ", employType:"アルバイト", affiliation:"ホール", hireDate:"2026-08-08"},
+];
 
-/* 初期シード:凱旋門評価シート.xlsx より。ポジション評価/業務評価どちらも手入力値をそのまま使用(自動算出なし)。
-   勤続年数はExcelのDATEDIFと同じ考え方で、入社日から毎回その場で計算する(手動同期が不要になる)。 */
-function computeTenureText(hireDate){
-  if(!hireDate) return "-";
-  const hire = new Date(hireDate);
+function computeTenureText(hireDateStr){
+  if(!hireDateStr) return "-";
+  const hire = new Date(hireDateStr);
   const now = new Date();
-  if(isNaN(hire.getTime()) || hire > now) return "-";
   let years = now.getFullYear() - hire.getFullYear();
   let months = now.getMonth() - hire.getMonth();
-  if(now.getDate() < hire.getDate()) months--;
-  if(months < 0){ years--; months += 12; }
+  if(now.getDate() < hire.getDate()) months -= 1;
+  if(months < 0){ years -= 1; months += 12; }
+  if(years < 0) return "-";
   return `${years}年${months}ヶ月`;
 }
 function seedStaff(){
-  const rows = [
-    ["篠原 令磨","D4","2024-05-06",
-      {SL:3,IR:3,ON:5,HO:5,KO:5,ST:5,DS:5,DR:5,RH:5,DH:5,RDH:5},
-      {"セット":5,"スタンバイ":5,"アフター":5,"オーダー":5,"ご案内":4,"レジ":4,"電話":5,"予約管理":3,"出し":5,"ドリンカー":5,"料理運び":5,"ドリンク運び":5,"従業員統率":4,"ラスト":4,"集計":0}],
-    ["和田 鈴帆","D4","2024-05-06",
-      {SL:2,IR:3,ON:5,HO:5,KO:5,ST:5,DS:4,DR:4,RH:5,DH:4,RDH:5},
-      {"セット":5,"スタンバイ":5,"アフター":5,"オーダー":5,"ご案内":4,"レジ":4,"電話":5,"予約管理":3,"出し":4,"ドリンカー":4,"料理運び":5,"ドリンク運び":5,"従業員統率":3,"ラスト":4,"集計":0}],
-    ["縫田 桜","D4","2023-11-01",
-      {SL:2,IR:3,ON:5,HO:5,KO:5,ST:5,DS:3,DR:3,RH:5,DH:4,RDH:5},
-      {"セット":5,"スタンバイ":5,"アフター":5,"オーダー":5,"ご案内":4,"レジ":4,"電話":5,"予約管理":3,"出し":3,"ドリンカー":3,"料理運び":5,"ドリンク運び":5,"従業員統率":3,"ラスト":3,"集計":0}],
-    ["木内 健太","D3","2023-11-30",
-      {SL:5,IR:5,ON:5,HO:5,KO:5,ST:5,DS:3,DR:4,RH:5,DH:5,RDH:5},
-      {"セット":5,"スタンバイ":5,"アフター":5,"オーダー":5,"ご案内":5,"レジ":5,"電話":5,"予約管理":5,"出し":3,"ドリンカー":3,"料理運び":4,"ドリンク運び":4,"従業員統率":5,"ラスト":5,"集計":5}],
-    ["神崎 里桜","D3","2022-09-14",
-      {SL:4,IR:4,ON:5,HO:5,KO:5,ST:5,DS:3,DR:5,RH:5,DH:5,RDH:5},
-      {"セット":5,"スタンバイ":5,"アフター":5,"オーダー":5,"ご案内":5,"レジ":4,"電話":5,"予約管理":4,"出し":3,"ドリンカー":5,"料理運び":4,"ドリンク運び":4,"従業員統率":3,"ラスト":5,"集計":0}],
-    ["伊藤 心美","D3","2025-03-24",
-      {SL:1,IR:2,ON:4,HO:5,KO:4,ST:5,DS:2,DR:4,RH:3,DH:4,RDH:3},
-      {"セット":5,"スタンバイ":4,"アフター":5,"オーダー":4,"ご案内":4,"レジ":4,"電話":4,"予約管理":2,"出し":2,"ドリンカー":4,"料理運び":3,"ドリンク運び":3,"従業員統率":2,"ラスト":4,"集計":0}],
-    ["市川 真聖","D3","2024-05-06",
-      {SL:1,IR:2,ON:4,HO:5,KO:3,ST:5,DS:2,DR:2,RH:4,DH:3,RDH:3},
-      {"セット":4,"スタンバイ":4,"アフター":4,"オーダー":4,"ご案内":3,"レジ":3,"電話":3,"予約管理":2,"出し":2,"ドリンカー":2,"料理運び":3,"ドリンク運び":3,"従業員統率":1,"ラスト":3,"集計":0}],
-    ["大塚 梨乃","D3","2025-08-18",
-      {SL:1,IR:2,ON:4,HO:5,KO:4,ST:5,DS:3,DR:3,RH:4,DH:4,RDH:4},
-      {"セット":4,"スタンバイ":4,"アフター":4,"オーダー":3,"ご案内":3,"レジ":3,"電話":3,"予約管理":2,"出し":3,"ドリンカー":3,"料理運び":4,"ドリンク運び":4,"従業員統率":1,"ラスト":3,"集計":0}],
-    ["大森 はるか","D3","2026-07-18",
-      {SL:0,IR:0,ON:0,HO:0,KO:0,ST:0,DS:0,DR:0,RH:0,DH:0,RDH:0},
-      {"セット":2,"スタンバイ":2,"アフター":2,"オーダー":1,"ご案内":0,"レジ":0,"電話":0,"予約管理":0,"出し":0,"ドリンカー":0,"料理運び":0,"ドリンク運び":0,"従業員統率":0,"ラスト":0,"集計":0}],
-    ["清水 由椛","D2","2024-11-11",
-      {SL:1,IR:2,ON:4,HO:5,KO:4,ST:5,DS:3,DR:4,RH:4,DH:4,RDH:4},
-      {"セット":5,"スタンバイ":4,"アフター":5,"オーダー":4,"ご案内":4,"レジ":3,"電話":3,"予約管理":2,"出し":3,"ドリンカー":4,"料理運び":4,"ドリンク運び":4,"従業員統率":3,"ラスト":4,"集計":2}],
-    ["中村 彩乃","D2","2025-03-03",
-      {SL:1,IR:2,ON:5,HO:5,KO:5,ST:5,DS:2,DR:2,RH:3,DH:3,RDH:3},
-      {"セット":5,"スタンバイ":4,"アフター":5,"オーダー":4,"ご案内":4,"レジ":4,"電話":4,"予約管理":2,"出し":2,"ドリンカー":3,"料理運び":3,"ドリンク運び":3,"従業員統率":2,"ラスト":4,"集計":4}],
-    ["徳永 唯花","D2","2025-03-31",
-      {SL:1,IR:2,ON:5,HO:5,KO:5,ST:5,DS:2,DR:3,RH:3,DH:4,RDH:3},
-      {"セット":5,"スタンバイ":5,"アフター":5,"オーダー":4,"ご案内":4,"レジ":4,"電話":4,"予約管理":2,"出し":2,"ドリンカー":3,"料理運び":3,"ドリンク運び":3,"従業員統率":2,"ラスト":4,"集計":4}],
-    ["下平 奈々","D2","2025-04-30",
-      {SL:1,IR:2,ON:4,HO:4,KO:4,ST:5,DS:2,DR:2,RH:3,DH:3,RDH:3},
-      {"セット":5,"スタンバイ":4,"アフター":5,"オーダー":4,"ご案内":3,"レジ":3,"電話":3,"予約管理":2,"出し":2,"ドリンカー":2,"料理運び":3,"ドリンク運び":3,"従業員統率":2,"ラスト":3,"集計":0}],
-    ["尾松 祐理","D2","2026-04-05",
-      {SL:0,IR:1,ON:3,HO:3,KO:3,ST:3,DS:1,DR:2,RH:2,DH:2,RDH:2},
-      {"セット":4,"スタンバイ":3,"アフター":4,"オーダー":3,"ご案内":2,"レジ":2,"電話":2,"予約管理":0,"出し":1,"ドリンカー":2,"料理運び":2,"ドリンク運び":2,"従業員統率":0,"ラスト":3,"集計":0}],
-    ["下田 陽斗","D2","2026-04-05",
-      {SL:0,IR:0,ON:2,HO:2,KO:2,ST:3,DS:1,DR:1,RH:2,DH:2,RDH:2},
-      {"セット":4,"スタンバイ":3,"アフター":4,"オーダー":3,"ご案内":1,"レジ":1,"電話":1,"予約管理":0,"出し":1,"ドリンカー":1,"料理運び":3,"ドリンク運び":3,"従業員統率":0,"ラスト":2,"集計":0}],
-    ["藤田 夢羽","D2","2025-11-22",
-      {SL:0,IR:2,ON:3,HO:3,KO:3,ST:4,DS:1,DR:2,RH:2,DH:2,RDH:2},
-      {"セット":4,"スタンバイ":4,"アフター":4,"オーダー":3,"ご案内":3,"レジ":2,"電話":2,"予約管理":0,"出し":1,"ドリンカー":1,"料理運び":3,"ドリンク運び":3,"従業員統率":0,"ラスト":3,"集計":0}],
-    ["戸塚 亮輔","D2","2026-06-27",
-      {SL:0,IR:0,ON:0,HO:1,KO:0,ST:1,DS:0,DR:0,RH:0,DH:0,RDH:0},
-      {"セット":2,"スタンバイ":2,"アフター":2,"オーダー":0,"ご案内":0,"レジ":0,"電話":0,"予約管理":0,"出し":0,"ドリンカー":0,"料理運び":0,"ドリンク運び":0,"従業員統率":0,"ラスト":0,"集計":0}],
-    ["山口 優輝","D1","2025-01-29",
-      {SL:1,IR:2,ON:3,HO:3,KO:3,ST:4,DS:5,DR:5,RH:5,DH:5,RDH:5},
-      {"セット":4,"スタンバイ":4,"アフター":5,"オーダー":3,"ご案内":3,"レジ":2,"電話":3,"予約管理":2,"出し":5,"ドリンカー":5,"料理運び":5,"ドリンク運び":5,"従業員統率":4,"ラスト":4,"集計":0}],
-    ["木村 綾太","D1","2026-03-20",
-      {SL:0,IR:0,ON:2,HO:3,KO:2,ST:3,DS:1,DR:2,RH:2,DH:2,RDH:2},
-      {"セット":3,"スタンバイ":3,"アフター":2,"オーダー":3,"ご案内":2,"レジ":1,"電話":1,"予約管理":0,"出し":1,"ドリンカー":1,"料理運び":2,"ドリンク運び":2,"従業員統率":0,"ラスト":3,"集計":0}],
-    ["大上 裕士","D1","2026-05-03",
-      {SL:0,IR:0,ON:2,HO:3,KO:2,ST:3,DS:1,DR:1,RH:2,DH:2,RDH:2},
-      {"セット":3,"スタンバイ":3,"アフター":2,"オーダー":3,"ご案内":1,"レジ":1,"電話":1,"予約管理":0,"出し":1,"ドリンカー":1,"料理運び":2,"ドリンク運び":2,"従業員統率":0,"ラスト":3,"集計":0}],
-    ["中村 心咲","D1","",
-      {SL:1,IR:5,ON:5,HO:5,KO:5,ST:5,DS:2,DR:2,RH:3,DH:3,RDH:3},
-      {"セット":5,"スタンバイ":5,"アフター":5,"オーダー":5,"ご案内":5,"レジ":5,"電話":5,"予約管理":5,"出し":2,"ドリンカー":2,"料理運び":3,"ドリンク運び":3,"従業員統率":3,"ラスト":4,"集計":4}],
-    ["小山 さくら","D1","2026-06-27",
-      {SL:0,IR:0,ON:0,HO:1,KO:0,ST:3,DS:0,DR:0,RH:0,DH:0,RDH:0},
-      {"セット":3,"スタンバイ":3,"アフター":2,"オーダー":2,"ご案内":0,"レジ":0,"電話":0,"予約管理":0,"出し":0,"ドリンカー":0,"料理運び":0,"ドリンク運び":0,"従業員統率":0,"ラスト":0,"集計":0}],
-    ["小針 陽菜","K3","2024-11-18",
-      {SL:1,IR:3,ON:5,HO:5,KO:5,ST:5,DS:2,DR:3,RH:3,DH:3,RDH:3},
-      {"セット":5,"スタンバイ":5,"アフター":5,"オーダー":5,"ご案内":4,"レジ":4,"電話":5,"予約管理":3,"出し":2,"ドリンカー":3,"料理運び":3,"ドリンク運び":3,"従業員統率":2,"ラスト":2,"集計":0}],
-    ["熊本 美羽","D3","2023-11-01",
-      {SL:4,IR:3,ON:5,HO:5,KO:5,ST:5,DS:4,DR:4,RH:5,DH:5,RDH:5},
-      {"セット":5,"スタンバイ":5,"アフター":5,"オーダー":5,"ご案内":4,"レジ":4,"電話":5,"予約管理":3,"出し":4,"ドリンカー":4,"料理運び":5,"ドリンク運び":5,"従業員統率":5,"ラスト":5,"集計":4}],
-    ["飯泉 彩衣","D2","2025-06-21",
-      {SL:0,IR:0,ON:0,HO:0,KO:0,ST:2,DS:1,DR:1,RH:3,DH:3,RDH:3},
-      {"セット":3,"スタンバイ":2,"アフター":2,"オーダー":2,"ご案内":0,"レジ":0,"電話":0,"予約管理":0,"出し":1,"ドリンカー":1,"料理運び":3,"ドリンク運び":3,"従業員統率":0,"ラスト":0,"集計":0}],
-    ["岩田 梨沙","D1","2022-09-14",
-      {SL:4,IR:3,ON:5,HO:5,KO:5,ST:5,DS:4,DR:5,RH:5,DH:5,RDH:5},
-      {"セット":5,"スタンバイ":5,"アフター":5,"オーダー":5,"ご案内":4,"レジ":4,"電話":5,"予約管理":3,"出し":4,"ドリンカー":5,"料理運び":5,"ドリンク運び":5,"従業員統率":5,"ラスト":5,"集計":4}],
-    ["梶川 来星","D1","2024-11-18",
-      {SL:0,IR:0,ON:1,HO:2,KO:0,ST:2,DS:1,DR:0,RH:2,DH:2,RDH:2},
-      {"セット":1,"スタンバイ":3,"アフター":2,"オーダー":2,"ご案内":0,"レジ":0,"電話":0,"予約管理":0,"出し":1,"ドリンカー":0,"料理運び":2,"ドリンク運び":2,"従業員統率":0,"ラスト":0,"集計":0}],
-  ];
-  return rows.map((r,i)=>({id:String(i+1), name:r[0], rank:r[1], hireDate:r[2], positions:r[3], tasks:r[4], note:""}));
-}
-function todayISO(){ return new Date().toISOString().slice(0,10); }
-function esc(str){
-  const d = document.createElement("div");
-  d.textContent = str ?? "";
-  return d.innerHTML;
-}
-function tenureMonths(hireDate){
-  if(!hireDate) return null;
-  const hire = new Date(hireDate);
-  const now = new Date();
-  if(isNaN(hire.getTime()) || hire > now) return null;
-  let years = now.getFullYear() - hire.getFullYear();
-  let months = now.getMonth() - hire.getMonth();
-  if(now.getDate() < hire.getDate()) months--;
-  if(months < 0){ years--; months += 12; }
-  return years*12 + months;
-}
-function linearRegression(points){
-  const n = points.length;
-  const sumX = points.reduce((a,p)=>a+p.x,0);
-  const sumY = points.reduce((a,p)=>a+p.y,0);
-  const sumXY = points.reduce((a,p)=>a+p.x*p.y,0);
-  const sumXX = points.reduce((a,p)=>a+p.x*p.x,0);
-  const denom = (n*sumXX - sumX*sumX);
-  const slope = denom===0 ? 0 : (n*sumXY - sumX*sumY) / denom;
-  const intercept = (sumY - slope*sumX)/n;
-  return {slope, intercept};
-}
-/* 勤続 x 総合評価(業務)の傾向線からの乖離を見る */
-function renderGrowthGapCard(){
-  const columns = TASK_ITEMS;
-  const points = state.staff.map(s=>{
-    const months = tenureMonths(s.hireDate);
-    const overall = overallScore(s, columns, "tasks");
-    return {staff:s, months, overall};
-  }).filter(p=>p.months!==null);
-
-  const card = document.createElement("div");
-  card.className = "card";
-  card.innerHTML = `<div style="font-weight:800;margin-bottom:10px;">勤続 × 成長ギャップ</div>`;
-
-  if(points.length < 4){
-    const e = document.createElement("div");
-    e.className = "empty";
-    e.textContent = "入社日が入力されている人数が少なく、傾向線を出せません";
-    card.appendChild(e);
-    return card;
-  }
-
-  const {slope, intercept} = linearRegression(points.map(p=>({x:p.months, y:p.overall})));
-  const withResidual = points.map(p=>({
-    ...p,
-    predicted: slope*p.months + intercept,
-    residual: p.overall - (slope*p.months + intercept),
-  }));
-
-  const under = [...withResidual].sort((a,b)=>a.residual-b.residual).slice(0,3);
-  const over  = [...withResidual].sort((a,b)=>b.residual-a.residual).slice(0,3);
-
-  const makeSection = (title, list, sign) => {
-    const head = document.createElement("div");
-    head.className = "section-head";
-    head.textContent = title;
-    card.appendChild(head);
-    list.forEach(p=>{
-      const row = document.createElement("div");
-      row.className = "item-row";
-      const deltaStr = (p.residual>=0?"+":"") + p.residual.toFixed(2);
-      row.innerHTML = `
-        <div>
-          <div><strong>${p.staff.name}</strong> <span class="rank-chip">${p.staff.rank}</span></div>
-          <div class="meta">勤続 ${computeTenureText(p.staff.hireDate)} ・ 総合評価 ${p.overall.toFixed(2)} ・ 傾向値との差 ${deltaStr}</div>
-        </div>
-      `;
-      card.appendChild(row);
-    });
-  };
-  makeSection("要フォロー", under);
-  makeSection("好調", over);
-
-  return card;
-}
-function addDays(dateStr, n){
-  const d = new Date(dateStr);
-  d.setDate(d.getDate()+n);
-  return d.toISOString().slice(0,10);
-}
-/* 目標・教育ログの対象選択肢:業務15項目+ポジション11項目 */
-function goalItemOptionsHTML(selected){
-  const taskOpts = TASK_ITEMS.map(i=>`<option value="${i}" ${i===selected?"selected":""}>${i}</option>`).join("");
-  const posOpts = POSITIONS.map(p=>`<option value="${p.code}(${p.name})" ${`${p.code}(${p.name})`===selected?"selected":""}>${p.code} - ${p.name}</option>`).join("");
-  return `<optgroup label="業務">${taskOpts}</optgroup><optgroup label="ポジション">${posOpts}</optgroup>`;
+  return STAFF_SEED.map(s => ({...s, periods: emptyPeriods()}));
 }
 
-/* ---------- レーダーチャート(個人 vs チーム平均) ---------- */
-function buildRadarSVG(items, seriesIndividual, seriesAvg, maxVal){
-  const size = 320;
-  const center = size/2;
-  const radius = size/2 - 46;
-  const angleStep = (2*Math.PI)/items.length;
-  const pointFor = (val, i) => {
-    const r = radius * (Math.max(0,Math.min(maxVal,val))/maxVal);
-    const angle = -Math.PI/2 + i*angleStep;
-    return [center + r*Math.cos(angle), center + r*Math.sin(angle)];
-  };
-  const polyStr = pts => pts.map(p=>p.join(",")).join(" ");
-  const gridRings = [1,2,3,4,5].map(level=>{
-    const pts = items.map((_,i)=> pointFor(level, i));
-    const isThreshold = level===READY_THRESHOLD;
-    const stroke = isThreshold ? "#3F7D4C" : "#E7DFD2";
-    const width = isThreshold ? 2 : 1;
-    const dash = isThreshold ? "" : "";
-    return `<polygon points="${polyStr(pts)}" fill="none" stroke="${stroke}" stroke-width="${width}"/>`;
-  }).join("");
-  const axisLines = items.map((_,i)=>{
-    const [x,y] = pointFor(maxVal, i);
-    return `<line x1="${center}" y1="${center}" x2="${x}" y2="${y}" stroke="#E7DFD2" stroke-width="1"/>`;
-  }).join("");
-  const labels = items.map((it,i)=>{
-    const angle = -Math.PI/2 + i*angleStep;
-    const lx = center + (radius+24)*Math.cos(angle);
-    const ly = center + (radius+24)*Math.sin(angle);
-    let anchor = "middle";
-    if(Math.cos(angle) > 0.3) anchor = "start";
-    else if(Math.cos(angle) < -0.3) anchor = "end";
-    return `<text x="${lx}" y="${ly}" font-size="11" font-weight="700" fill="#2B2420" text-anchor="${anchor}" dominant-baseline="middle">${it.code}</text>`;
-  }).join("");
-  const avgPts = items.map((it)=> pointFor(seriesAvg[it.code]??0, items.indexOf(it)));
-  const indPts = items.map((it)=> pointFor(seriesIndividual[it.code]??0, items.indexOf(it)));
-  const avgPoly = `<polygon points="${polyStr(avgPts)}" fill="none" stroke="#8A7F72" stroke-width="2" stroke-dasharray="4,3"/>`;
-  const indPoly = `<polygon points="${polyStr(indPts)}" fill="#C1531B" fill-opacity="0.22" stroke="#C1531B" stroke-width="2.5"/>`;
-  return `<svg viewBox="0 0 ${size} ${size}" width="100%" style="max-width:360px;display:block;margin:0 auto;">
-    ${gridRings}${axisLines}${avgPoly}${indPoly}${labels}
-  </svg>`;
-}
-
-/* ---------- 評価の推移(保存するたびに履歴を記録する) ---------- */
-const OVERALL_TREND_KEY = "__overall__";
-function scoreValueFor(scores, itemCode, allCodes){
-  if(itemCode === OVERALL_TREND_KEY){
-    const vals = allCodes.map(c=>scores[c]).filter(v=>v!==undefined);
-    if(vals.length===0) return undefined;
-    return vals.reduce((a,b)=>a+b,0)/vals.length;
-  }
-  return scores[itemCode];
-}
-function recordHistorySnapshot(staffId, field, scores){
-  if(!Array.isArray(state.history)) state.history = [];
-  const date = todayISO();
-  const existing = state.history.find(h=> h.staffId===staffId && h.field===field && h.date===date);
-  if(existing){
-    existing.scores = {...scores};
-  } else {
-    state.history.push({ id:"h"+Date.now()+Math.random().toString(36).slice(2,6), staffId, field, date, scores:{...scores} });
-  }
-}
-/* 誰かがその日初めてシステムを開いたタイミングで、全員のその時点のスコアを自動記録する。
-   サーバー無しの構成なので厳密な毎日自動保存は組めないが、「その日最初にアクセスした人」を
-   トリガーにすることで、実質的に日次の記録に近づける。 */
-let dailySnapshotChecked = false;
-function ensureTodaySnapshot(){
-  if(dailySnapshotChecked) return false;
-  dailySnapshotChecked = true;
-  if(!Array.isArray(state.history)) state.history = [];
-  if(!Array.isArray(state.staff)) return false;
-  const date = todayISO();
-  let added = false;
-  state.staff.forEach(st=>{
-    ["positions","tasks"].forEach(field=>{
-      const has = state.history.some(h=> h.staffId===st.id && h.field===field && h.date===date);
-      if(!has && st[field]){
-        state.history.push({ id:"h"+Date.now()+Math.random().toString(36).slice(2,6), staffId:st.id, field, date, scores:{...st[field]} });
-        added = true;
-      }
-    });
-  });
-  return added;
-}
-function getItemHistorySeries(staffId, field, itemCode, allCodes){
-  if(!Array.isArray(state.history)) return [];
-  return state.history
-    .filter(h=> h.staffId===staffId && h.field===field && h.scores && scoreValueFor(h.scores, itemCode, allCodes)!==undefined)
-    .sort((a,b)=> a.date<b.date?-1:1)
-    .map(h=>({date:h.date, value:scoreValueFor(h.scores, itemCode, allCodes)}));
-}
-function getItemAverageSeries(field, itemCode, allCodes){
-  if(!Array.isArray(state.history)) return [];
-  const byDate = {};
-  state.history.filter(h=> h.field===field && h.scores && scoreValueFor(h.scores, itemCode, allCodes)!==undefined).forEach(h=>{
-    (byDate[h.date] ||= []).push(scoreValueFor(h.scores, itemCode, allCodes));
-  });
-  return Object.keys(byDate).sort().map(date=>({
-    date, value: byDate[date].reduce((a,b)=>a+b,0)/byDate[date].length
-  }));
-}
-/* 期間が長くなるほど、日単位→週単位→月単位に自動でまとめて見やすくする。
-   本人・平均の2本が別々の粒度になるとX軸がズレるため、両方合わせた期間で判定する。 */
-function pickBucketFn(allDates){
-  if(allDates.length < 3) return null;
-  const sorted = [...allDates].sort();
-  const spanDays = (new Date(sorted[sorted.length-1]) - new Date(sorted[0])) / 86400000;
-  if(spanDays > 180) return (dateStr)=> dateStr.slice(0,7); // YYYY-MM
-  if(spanDays > 45) return (dateStr)=>{ // その週の月曜日をラベルにする
-    const d = new Date(dateStr);
-    const diffToMonday = (d.getDay()===0 ? -6 : 1-d.getDay());
-    d.setDate(d.getDate()+diffToMonday);
-    return d.toISOString().slice(0,10);
-  };
-  return null; // 45日以内は日単位のまま
-}
-function aggregateSeries(series, bucketFn){
-  if(!bucketFn) return series;
-  const buckets = {};
-  series.forEach(p=>{ (buckets[bucketFn(p.date)] ||= []).push(p.value); });
-  return Object.keys(buckets).sort().map(key=>({
-    date:key, value: buckets[key].reduce((a,b)=>a+b,0)/buckets[key].length
-  }));
-}
-function buildLineChartSVG(individualSeries, avgSeries, maxVal){
-  const bucketFn = pickBucketFn([...individualSeries.map(p=>p.date), ...avgSeries.map(p=>p.date)]);
-  individualSeries = aggregateSeries(individualSeries, bucketFn);
-  avgSeries = aggregateSeries(avgSeries, bucketFn);
-  const width = 560, height = 210, padL = 30, padR = 12, padT = 12, padB = 24;
-  const plotW = width - padL - padR, plotH = height - padT - padB;
-  const allDates = [...new Set([...individualSeries.map(p=>p.date), ...avgSeries.map(p=>p.date)])].sort();
-  if(allDates.length === 0){
-    return `<div class="empty">まだ推移データがありません(今後、保存するたびに記録されていきます)</div>`;
-  }
-  const xFor = (date) => allDates.length<=1 ? padL+plotW/2 : padL + (allDates.indexOf(date)/(allDates.length-1))*plotW;
-  const yFor = (v) => padT + plotH - (Math.max(0,Math.min(maxVal,v))/maxVal)*plotH;
-  const gridLines = [0,1,2,3,4,5].map(level=>{
-    const y = yFor(level);
-    return `<line x1="${padL}" y1="${y}" x2="${width-padR}" y2="${y}" stroke="#E7DFD2" stroke-width="1"/>
-      <text x="${padL-6}" y="${y+3}" font-size="10" fill="#8A7F72" text-anchor="end">${level}</text>`;
-  }).join("");
-  const lineFor = (series, color, dash) => {
-    if(series.length===0) return "";
-    const pts = series.map(p=>`${xFor(p.date)},${yFor(p.value)}`).join(" ");
-    const dots = series.map(p=>`<circle cx="${xFor(p.date)}" cy="${yFor(p.value)}" r="3" fill="${color}"/>`).join("");
-    return `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2.5" ${dash?`stroke-dasharray="${dash}"`:""}/>${dots}`;
-  };
-  const firstDate = allDates[0], lastDate = allDates[allDates.length-1];
-  const xLabels = `
-    <text x="${xFor(firstDate)}" y="${height-6}" font-size="10" fill="#8A7F72" text-anchor="start">${firstDate}</text>
-    ${allDates.length>1?`<text x="${xFor(lastDate)}" y="${height-6}" font-size="10" fill="#8A7F72" text-anchor="end">${lastDate}</text>`:""}
-  `;
-  return `<svg viewBox="0 0 ${width} ${height}" width="100%" style="display:block;">
-    ${gridLines}${lineFor(avgSeries,"#8A7F72","4,3")}${lineFor(individualSeries,"#C1531B","")}${xLabels}
-  </svg>`;
-}
-
-function seedGoals(staff){
-  const find = n => staff.find(s=>s.name===n)?.id;
-  return [
-    {id:"g1", staffId:find("木内 健太"), item:"従業員統率", targetScore:5, due:"2026-05-31", note:"リーダー候補として指示出しの精度を上げる", done:false},
-    {id:"g2", staffId:find("中村 心咲"), item:"予約管理", targetScore:5, due:"2026-06-30", note:"次期入口筆頭候補。配席変更に慣れる", done:false},
-    {id:"g3", staffId:find("木村 綾太"), item:"オーダー", targetScore:3, due:"2026-05-31", note:"まずはオーダー単独運用を目指す", done:false},
-  ];
-}
-function seedLogs(staff){
-  const find = n => staff.find(s=>s.name===n)?.id;
-  return [
-    {id:"l1", staffId:find("大塚 梨乃"), trainerId:find("木内 健太"), item:"運び", memo:"料理の内容にかなり慣れてきた。少しずつ出しにも挑戦。", date:"2026-04-29"},
-    {id:"l2", staffId:find("木村 綾太"), trainerId:find("木内 健太"), item:"オーダー", memo:"ランチ・ディナーともにファーストオーダーまで取れるように。", date:"2026-04-29"},
-    {id:"l3", staffId:find("縫田 桜"),   trainerId:find("木内 健太"), item:"出し", memo:"オーダーが重なるとパニクる癖あり。牛脂レモンを必ず持っていく。", date:"2026-04-29"},
-  ];
-}
-
-/* ============================== 状態管理・共有保存(Firebase Realtime Database) ============================== */
+/* ============================== 状態管理・共有保存(プロトタイプはwindow.storageで保持) ============================== */
+const STORAGE_KEY = "ats-hyouka-prototype-v2";
+const STORAGE_AVAILABLE = (typeof window!=="undefined" && !!window.storage);
 let state = null;
-let editingForm = false;
-let firstLoadDone = false;
+let lastSavedJSON = "";
 
-function defaultState(){
-  const staff = seedStaff();
-  return { staff, goals: seedGoals(staff), logs: seedLogs(staff), memoText: "", memoUpdatedBy: null, memoUpdatedAt: null, loginUsers: [], history: [], updatedAt: null };
+function defaultState(){ return { staff: seedStaff(), updatedAt: null }; }
+async function loadState(){
+  if(!STORAGE_AVAILABLE) return defaultState();
+  try{
+    const res = await window.storage.get(STORAGE_KEY, true);
+    if(res && res.value) return JSON.parse(res.value);
+  }catch(e){}
+  const s = defaultState();
+  try{ await window.storage.set(STORAGE_KEY, JSON.stringify(s), true); }catch(e){}
+  return s;
 }
-
 async function saveState(){
   state.updatedAt = new Date().toISOString();
-  try{
-    await set(stateRef, state);
-    showToast("保存しました(全員に共有されます)");
-    setSyncStatus(true);
-  }catch(e){
-    console.error("save failed", e);
-    showToast("保存に失敗しました");
-    setSyncStatus(false);
+  lastSavedJSON = JSON.stringify(state);
+  if(STORAGE_AVAILABLE){
+    try{
+      await window.storage.set(STORAGE_KEY, lastSavedJSON, true);
+      showToast("保存しました(全員に共有されます)");
+      setSyncStatus(true);
+    }catch(e){ showToast("保存に失敗しました"); setSyncStatus(false); }
+  } else {
+    showToast("この環境では共有保存が使えません(ローカルのみ)");
   }
 }
 function showToast(msg){
@@ -712,27 +279,22 @@ function showToast(msg){
 function setSyncStatus(ok){
   const dot = document.getElementById("sync-dot");
   const lbl = document.getElementById("sync-label");
+  if(!STORAGE_AVAILABLE){ dot.classList.add("off"); lbl.textContent = "共有同期なし(この表示環境では保存できません)"; return; }
   dot.classList.toggle("off", !ok);
   const t = state?.updatedAt ? new Date(state.updatedAt).toLocaleString("ja-JP",{hour:"2-digit",minute:"2-digit",month:"numeric",day:"numeric"}) : "-";
-  lbl.textContent = ok ? `全員と同期中 ・ 最終更新 ${t}` : "接続待ち...";
+  lbl.textContent = ok ? `全員と同期中 ・ 最終更新 ${t}` : "同期エラー";
 }
 
 /* ============================== タブ ============================== */
 const TABS = [
-  {id:"posDashboard",  label:"ポジション評価ダッシュボード"},
-  {id:"posEval",       label:"ポジション評価入力"},
-  {id:"taskDashboard", label:"業務評価ダッシュボード"},
-  {id:"taskEval",      label:"業務評価入力"},
-  {id:"goals",         label:"目標"},
-  {id:"logs",          label:"教育"},
-  {id:"memo",          label:"メモ"},
-  {id:"staffMgmt",     label:"スタッフ管理"},
+  {id:"dashboard",  label:"ATS評価ダッシュボード"},
+  {id:"entry",      label:"ATS評価入力"},
+  {id:"guideline",  label:"評価ガイドライン"},
 ];
-let activeTab = "posDashboard";
+let activeTab = "dashboard";
+let dashboardFilter = "all";      // all | hall | kitchen
+let dashboardPeriod = PERIODS[0]; // 4月 | 7月 | 10月 | 1月
 
-function currentTabLabel(){
-  return TABS.find(t=>t.id===activeTab)?.label ?? "";
-}
 function renderTabs(){
   const nav = document.getElementById("tabs");
   nav.innerHTML = "";
@@ -740,1118 +302,424 @@ function renderTabs(){
     const b = document.createElement("button");
     b.textContent = t.label;
     b.className = t.id===activeTab ? "active" : "";
-    b.onclick = ()=>{ editingForm=false; activeTab = t.id; render(); };
+    b.onclick = ()=>{ activeTab = t.id; render(); };
     nav.appendChild(b);
   });
 }
-function titleEl(){
-  const h = document.createElement("h2");
-  h.className = "title";
-  h.textContent = currentTabLabel();
-  return h;
+function renderPeriodButtons(selected, onSelect){
+  const row = document.createElement("div");
+  row.className = "period-row";
+  const lbl = document.createElement("span");
+  lbl.className = "lbl";
+  lbl.textContent = "評価時期:";
+  row.appendChild(lbl);
+  const group = document.createElement("div");
+  group.className = "btn-group";
+  PERIODS.forEach(p=>{
+    const b = document.createElement("button");
+    b.textContent = p;
+    b.className = p===selected ? "active" : "";
+    b.onclick = ()=> onSelect(p);
+    group.appendChild(b);
+  });
+  row.appendChild(group);
+  return row;
 }
-
 function render(){
   renderTabs();
   const main = document.getElementById("main");
   main.innerHTML = "";
-  if(activeTab==="posDashboard")  main.appendChild(renderScoreDashboard(POSITIONS.map(p=>p.code), "positions", POSITIONS));
-  if(activeTab==="posEval")       main.appendChild(renderScoreEval(POSITIONS, "positions"));
-  if(activeTab==="taskDashboard"){
-    main.appendChild(renderScoreDashboard(TASK_ITEMS, "tasks", TASK_ITEMS.map(t=>({code:t,name:"",desc:t}))));
-  }
-  if(activeTab==="taskEval")      main.appendChild(renderScoreEval(TASK_ITEMS.map(t=>({code:t,name:"",desc:t})), "tasks"));
-  if(activeTab==="goals")         main.appendChild(renderGoals());
-  if(activeTab==="logs"){
-    main.appendChild(renderLogs());
-    main.appendChild(renderGrowthGapCard());
-  }
-  if(activeTab==="memo")          main.appendChild(renderMemo());
-  if(activeTab==="staffMgmt")     main.appendChild(renderStaffManagement());
+  if(activeTab==="dashboard")  main.appendChild(renderDashboard());
+  if(activeTab==="entry")      main.appendChild(renderEntry());
+  if(activeTab==="guideline")  main.appendChild(renderGuideline());
 }
 
-/* ---------- 共通:ダッシュボード(ポジション/業務どちらも) ---------- */
-/* 学年は上(先輩)から順:D4 > D3 > D2 > D1 > K3。未知の学年は末尾。 */
-const RANK_ORDER = ["D4","D3","D2","D1","K3"];
-function rankIndex(rank){
-  const i = RANK_ORDER.indexOf(rank);
-  return i===-1 ? 999 : i;
+/* ---------- ATS評価ダッシュボード ---------- */
+const sortState = { col:"code", dir:"asc" };
+function affiliationMatches(aff, filter){
+  if(filter==="all") return true;
+  if(filter==="hall") return aff==="ホール" || aff==="両方";
+  if(filter==="kitchen") return aff==="キッチン" || aff==="両方";
+  return true;
 }
-function overallScore(staffObj, columns, field){
-  const vals = columns.map(c=> staffObj[field][c] ?? 0);
-  return vals.reduce((a,b)=>a+b,0) / vals.length;
-}
-
-const sortState = {
-  positions: {col:"rank", dir:"asc"},
-  tasks: {col:"rank", dir:"asc"},
-};
-
-function renderScoreDashboard(columns, field, colMeta){
+function renderDashboard(){
   const wrap = document.createElement("div");
-  wrap.appendChild(titleEl());
+  const titleRow = document.createElement("div");
+  titleRow.className = "title-row";
+  const h = document.createElement("h2");
+  h.className = "title";
+  h.textContent = "ATS評価ダッシュボード";
+  titleRow.appendChild(h);
+
+  const filterBtns = document.createElement("div");
+  filterBtns.className = "btn-group";
+  [{id:"all",label:"全て"},{id:"hall",label:"ホール"},{id:"kitchen",label:"キッチン"}].forEach(f=>{
+    const b = document.createElement("button");
+    b.textContent = f.label;
+    b.className = dashboardFilter===f.id ? "active" : "";
+    b.onclick = ()=>{ dashboardFilter = f.id; render(); };
+    filterBtns.appendChild(b);
+  });
+  titleRow.appendChild(filterBtns);
+  wrap.appendChild(titleRow);
+  wrap.appendChild(renderPeriodButtons(dashboardPeriod, (p)=>{ dashboardPeriod = p; render(); }));
+
   const card = document.createElement("div");
   card.className = "card";
   const tableWrap = document.createElement("div");
   tableWrap.className = "table-wrap";
   const table = document.createElement("table");
 
-  const s = sortState[field];
+  const s = sortState;
   const arrow = (col) => s.col===col ? (s.dir==="asc" ? " ▲" : " ▼") : "";
+  function applySort(col, kind){
+    if(s.col===col){ s.dir = s.dir==="asc" ? "desc" : "asc"; }
+    else { s.col = col; s.dir = kind==="number" ? "desc" : "asc"; }
+    render();
+  }
 
   const thead = document.createElement("thead");
-  const headRow = document.createElement("tr");
-  const nameTh = document.createElement("th");
-  nameTh.className = "name-col";
-  nameTh.style.cursor = "pointer";
-  nameTh.textContent = "氏名" + arrow("name");
-  nameTh.onclick = ()=> applySort("name", "name");
-  headRow.appendChild(nameTh);
-
-  const rankTh = document.createElement("th");
-  rankTh.style.cursor = "pointer";
-  rankTh.textContent = "学年" + arrow("rank");
-  rankTh.onclick = ()=> applySort("rank", "rank");
-  headRow.appendChild(rankTh);
-
-  const tenureTh = document.createElement("th");
-  tenureTh.textContent = "勤続";
-  headRow.appendChild(tenureTh);
-
-  const overallTh = document.createElement("th");
-  overallTh.style.cursor = "pointer";
-  overallTh.textContent = "総合評価" + arrow("overall");
-  overallTh.onclick = ()=> applySort("overall", "number");
-  headRow.appendChild(overallTh);
-
-  colMeta.forEach(c=>{
+  const catRow = document.createElement("tr");
+  catRow.className = "cat-row";
+  const metaTh = document.createElement("th");
+  metaTh.colSpan = 7; metaTh.textContent = "";
+  catRow.appendChild(metaTh);
+  CATEGORIES.forEach(cat=>{
     const th = document.createElement("th");
-    th.title = c.desc || c.code;
+    th.colSpan = cat.items.length;
+    th.textContent = cat.label;
+    catRow.appendChild(th);
+  });
+  const tailTh = document.createElement("th");
+  tailTh.colSpan = 2; tailTh.textContent = "";
+  catRow.appendChild(tailTh);
+  thead.appendChild(catRow);
+
+  const headRow = document.createElement("tr");
+  const metaCols = [
+    {key:"code", label:"社員CD"}, {key:"name", label:"氏名"}, {key:"employType", label:"雇用区分"},
+    {key:"affiliation", label:"所属"}, {key:"tenure", label:"勤続"}, {key:"evaluator", label:"評価者"}, {key:"achievement", label:"達成度"},
+  ];
+  metaCols.forEach(mc=>{
+    const th = document.createElement("th");
+    th.className = mc.key==="name" ? "name-col" : "";
     th.style.cursor = "pointer";
-    th.textContent = c.code + arrow(c.code);
-    th.onclick = ()=> applySort(c.code, "number");
+    th.textContent = mc.label + arrow(mc.key);
+    th.onclick = ()=> applySort(mc.key, (mc.key==="name"||mc.key==="employType"||mc.key==="affiliation"||mc.key==="evaluator") ? "string" : "number");
+    headRow.appendChild(th);
+  });
+  ALL_ITEMS.forEach(it=>{
+    const th = document.createElement("th");
+    th.title = `${it.name}(0〜${it.max}点)`;
+    th.style.cursor = "pointer";
+    th.textContent = it.name + arrow(it.name);
+    th.onclick = ()=> applySort(it.name, "number");
+    headRow.appendChild(th);
+  });
+  [{key:"bonus", label:"加点"}, {key:"total", label:"合計点数"}].forEach(tc=>{
+    const th = document.createElement("th");
+    th.style.cursor = "pointer";
+    th.textContent = tc.label + arrow(tc.key);
+    th.onclick = ()=> applySort(tc.key, "number");
     headRow.appendChild(th);
   });
   thead.appendChild(headRow);
   table.appendChild(thead);
 
-  function applySort(col, kind){
-    if(s.col===col){
-      s.dir = s.dir==="asc" ? "desc" : "asc";
-    } else {
-      s.col = col;
-      s.dir = kind==="number" ? "desc" : "asc"; // 点数系は高い順から、氏名/学年は自然順から
-    }
-    render();
-  }
-
-  const tbody = document.createElement("tbody");
-  const sorted = [...state.staff].sort((a,b)=>{
+  const filtered = state.staff.filter(st => affiliationMatches(st.affiliation, dashboardFilter));
+  const sorted = [...filtered].sort((a,b)=>{
     let va, vb;
-    if(s.col==="name"){ va=a.name; vb=b.name; }
-    else if(s.col==="rank"){ va=rankIndex(a.rank); vb=rankIndex(b.rank); }
-    else if(s.col==="overall"){ va=overallScore(a,columns,field); vb=overallScore(b,columns,field); }
-    else { va = a[field][s.col] ?? 0; vb = b[field][s.col] ?? 0; }
+    const aPeriod = a.periods[dashboardPeriod];
+    const bPeriod = b.periods[dashboardPeriod];
+    const aScores = aPeriod.scores;
+    const bScores = bPeriod.scores;
+    if(s.col==="code"){ va = Number(a.code); vb = Number(b.code); }
+    else if(s.col==="name"){ va = a.name; vb = b.name; }
+    else if(s.col==="employType"){ va = a.employType; vb = b.employType; }
+    else if(s.col==="affiliation"){ va = a.affiliation; vb = b.affiliation; }
+    else if(s.col==="evaluator"){ va = aPeriod.evaluator || ""; vb = bPeriod.evaluator || ""; }
+    else if(s.col==="tenure"){ va = a.hireDate || "9999"; vb = b.hireDate || "9999"; }
+    else if(s.col==="achievement"){ va = achievementPct(aScores); vb = achievementPct(bScores); }
+    else if(s.col==="bonus"){ va = aPeriod.bonus ?? 0; vb = bPeriod.bonus ?? 0; }
+    else if(s.col==="total"){ va = totalScore(aPeriod); vb = totalScore(bPeriod); }
+    else { va = aScores[s.col] ?? 0; vb = bScores[s.col] ?? 0; }
     let cmp;
     if(typeof va === "string"){ cmp = va.localeCompare(vb, "ja"); }
     else { cmp = va - vb; }
     return s.dir==="asc" ? cmp : -cmp;
   });
 
+  const tbody = document.createElement("tbody");
+  const affClass = (aff)=> aff==="ホール" ? "hall" : aff==="キッチン" ? "kitchen" : "both";
   sorted.forEach(st=>{
+    const period = st.periods[dashboardPeriod];
+    const scores = period.scores;
     const tr = document.createElement("tr");
-    const ov = overallScore(st, columns, field).toFixed(2);
-    tr.innerHTML = `<td class="name-col">${st.name}</td>` +
-      `<td><span class="rank-chip">${st.rank}</span></td>` +
-      `<td style="color:var(--muted);font-size:11.5px;">${computeTenureText(st.hireDate)}</td>` +
-      `<td style="font-weight:800;">${ov}</td>` +
-      columns.map(code=>{
-        const v = st[field][code] ?? 0;
-        const cls = v>=READY_THRESHOLD ? "ready" : (v>=1 ? "mid" : "low");
-        return `<td><span class="score-cell ${cls}">${v}</span></td>`;
-      }).join("");
+    tr.innerHTML = `
+      <td>${st.code}</td>
+      <td class="name-col">${st.name}</td>
+      <td>${st.employType}</td>
+      <td><span class="aff-chip ${affClass(st.affiliation)}">${st.affiliation}</span></td>
+      <td style="color:var(--muted);font-size:11px;">${computeTenureText(st.hireDate)}</td>
+      <td>${period.evaluator || "-"}</td>
+      <td style="font-weight:800;">${achievementPct(scores)}%</td>
+      ${ALL_ITEMS.map(it=>{
+        const v = scores[it.name] ?? 0;
+        const cls = scoreClass(v, it.max);
+        return `<td><span class="score-cell ${cls}">${v}/${it.max}</span></td>`;
+      }).join("")}
+      <td>${period.bonus ?? 0}</td>
+      <td style="font-weight:800;color:var(--ember-dark);">${totalScore(period)}</td>
+    `;
     tbody.appendChild(tr);
   });
   table.appendChild(tbody);
   tableWrap.appendChild(table);
   card.appendChild(tableWrap);
+
   const legend = document.createElement("div");
   legend.className = "legend";
   legend.innerHTML = `
-    <span><span class="dot" style="background:var(--green)"></span>3点以上・独り立ち可</span>
-    <span><span class="dot" style="background:var(--amber)"></span>1〜2点・平日/トレーニング中</span>
+    <span><span class="dot" style="background:var(--green)"></span>基準達成(独り立ち・満点クリア)</span>
+    <span><span class="dot" style="background:var(--amber)"></span>基準未達だが経験あり</span>
     <span><span class="dot" style="background:var(--gray-ink)"></span>0点・未経験</span>
-    <span style="margin-left:auto;">列見出しをクリックすると並び替えできます</span>
+    <span style="margin-left:auto;">列見出しをクリックすると並び替えできます・上のボタンで4月/7月/10月/1月のデータを切り替え</span>
   `;
   card.appendChild(legend);
   wrap.appendChild(card);
-
-  // 不足しがちな項目の検知 + 目標自動作成
-  const readyCount = (code) => state.staff.filter(st => (st[field][code] ?? 0) >= READY_THRESHOLD).length;
-  const weakItems = colMeta.map(c=>({code:c.code, name:c.name||"", count: readyCount(c.code)}))
-    .sort((a,b)=> a.count - b.count)
-    .slice(0,3);
-  const weakCard = document.createElement("div");
-  weakCard.className = "card";
-  weakCard.innerHTML = `<div style="font-weight:800;margin-bottom:10px;">育成優先項目</div>`;
-  weakItems.forEach(w=>{
-    const row = document.createElement("div");
-    row.className = "item-row";
-    row.innerHTML = `
-      <div>
-        <div><strong>${w.code}</strong>${w.name ? ` <span class="meta" style="display:inline;">${w.name}</span>` : ""}</div>
-        <div class="meta">独り立ち可能:${w.count}人 / ${state.staff.length}人</div>
-      </div>
-    `;
-    const btn = document.createElement("button");
-    btn.className = "ghost";
-    btn.textContent = "目標を自動作成";
-    btn.onclick = ()=> autoSuggestGoals(w.code, w.name, field);
-    row.appendChild(btn);
-    weakCard.appendChild(row);
-  });
-  wrap.appendChild(weakCard);
   return wrap;
 }
 
-function autoSuggestGoals(code, name, field){
-  const itemLabel = name ? `${code}(${name})` : code;
-  const candidates = state.staff
-    .filter(s => { const v = s[field][code] ?? 0; return v>=1 && v<READY_THRESHOLD; })
-    .sort((a,b)=> (b[field][code] ?? 0) - (a[field][code] ?? 0))
-    .slice(0,3);
-  let added = 0;
-  candidates.forEach(s=>{
-    const dup = state.goals.some(g=> g.staffId===s.id && g.item===itemLabel);
-    if(dup) return;
-    state.goals.push({
-      id: "g"+Date.now()+Math.random().toString(36).slice(2,6),
-      staffId: s.id,
-      item: itemLabel,
-      targetScore: READY_THRESHOLD,
-      due: addDays(todayISO(), 30),
-      note: `不足検知による自動提案(現在${s[field][code] ?? 0}点)`,
-    });
-    added++;
-  });
-  if(added>0) saveState();
-  showToast(added>0 ? `${added}件の目標案を追加しました` : "追加できる候補がいません(0点のみ、または既に目標済み)");
-  if(added>0){ activeTab = "goals"; render(); }
-}
+/* ---------- ATS評価入力(紙の評価票と同じ表レイアウト・4期間分の履歴を保持) ---------- */
+let entrySelectedId = null;
+let entrySelectedPeriod = PERIODS[0];
+const CAT_CLASS = {kitchen:"cat-kitchen", hall:"cat-hall", special:"cat-special", shift:"cat-shift", attitude:"cat-attitude"};
 
-/* ---------- 共通:評価入力(ポジション/業務どちらも) ---------- */
-let posEvalSelectedId = null;
-let taskEvalSelectedId = null;
-let posTrendItem = null;
-let taskTrendItem = null;
-function renderScoreEval(items, field){
-  const isPos = field==="positions";
+function renderEntry(){
   const wrap = document.createElement("div");
-  wrap.appendChild(titleEl());
+  const h = document.createElement("h2");
+  h.className = "title";
+  h.textContent = "ATS評価入力";
+  wrap.appendChild(h);
+
   const card = document.createElement("div");
   card.className = "card";
-
   const picker = document.createElement("div");
   picker.className = "staff-picker";
   picker.innerHTML = `<label>対象スタッフ</label>`;
   const sel = document.createElement("select");
-  sel.innerHTML = state.staff.map(s=>`<option value="${s.id}">${s.name}(${s.rank}・${computeTenureText(s.hireDate)})</option>`).join("");
-  let selectedId = isPos ? posEvalSelectedId : taskEvalSelectedId;
-  if(!selectedId) selectedId = state.staff[0]?.id;
-  sel.value = selectedId;
-  sel.onchange = ()=>{
-    if(isPos) posEvalSelectedId = sel.value; else taskEvalSelectedId = sel.value;
-    render();
-  };
+  sel.innerHTML = state.staff.map(s=>`<option value="${s.id}">${s.name}</option>`).join("");
+  if(!entrySelectedId) entrySelectedId = state.staff[0]?.id;
+  sel.value = entrySelectedId;
+  sel.onchange = ()=>{ entrySelectedId = sel.value; render(); };
   picker.appendChild(sel);
   card.appendChild(picker);
+  card.appendChild(renderPeriodButtons(entrySelectedPeriod, (p)=>{ entrySelectedPeriod = p; render(); }));
 
-  const staffObj = state.staff.find(s=>s.id===selectedId);
-  if(staffObj){
-    const recentLogs = [...state.logs]
-      .filter(l=>l.staffId===staffObj.id)
-      .sort((a,b)=> a.date<b.date?1:-1)
-      .slice(0,3);
-    if(recentLogs.length > 0){
-      const logsCard = document.createElement("div");
-      logsCard.style.cssText = "background:var(--cream);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:16px;";
-      const logsTitle = document.createElement("div");
-      logsTitle.style.cssText = "font-weight:800;font-size:12px;color:var(--muted);margin-bottom:6px;";
-      logsTitle.textContent = `${staffObj.name} への直近の教育ログ`;
-      logsCard.appendChild(logsTitle);
-      recentLogs.forEach(l=>{
-        const trainerObj = state.staff.find(s=>s.id===l.trainerId);
-        const row = document.createElement("div");
-        row.style.cssText = "font-size:12.5px;padding:4px 0;border-top:1px solid var(--line);";
-        row.innerHTML = `<strong>${esc(l.item)}</strong> <span class="meta" style="display:inline;">・ ${trainerObj?.name??"不明"} ・ ${esc(l.date)}</span>${l.memo?`<div class="meta">${esc(l.memo)}</div>`:""}`;
-        logsCard.appendChild(row);
-      });
-      card.appendChild(logsCard);
-    }
+  const staffObj = state.staff.find(s=>s.id===entrySelectedId);
+  if(!staffObj){ wrap.appendChild(card); return wrap; }
+  const periodData = staffObj.periods[entrySelectedPeriod];
 
-    const grid = document.createElement("div");
-    grid.className = "pos-edit-grid";
-    items.forEach(it=>{
-      const code = it.code;
-      const box = document.createElement("div");
-      box.className = "pos-edit";
-      const val = staffObj[field][code] ?? 0;
-      box.innerHTML = `
-        <div class="lbl">${code}</div>
-        <div class="name">${it.name||""}</div>
-        <input type="range" min="0" max="5" step="1" value="${val}">
-        <div class="val">${val} / 5</div>
-      `;
-      const range = box.querySelector("input");
-      const valLbl = box.querySelector(".val");
-      range.oninput = ()=>{
-        editingForm = true;
-        staffObj[field][code] = Number(range.value);
-        valLbl.textContent = `${range.value} / 5`;
-      };
-      grid.appendChild(box);
+  const meta = document.createElement("div");
+  meta.className = "meta-row";
+  meta.innerHTML = `
+    <span>社員CD: <strong>${staffObj.code}</strong></span>
+    <span>雇用区分: <strong>${staffObj.employType}</strong></span>
+    <span>評価時期: <strong>${entrySelectedPeriod}</strong></span>
+  `;
+  card.appendChild(meta);
+
+  const evaluatorRow = document.createElement("div");
+  evaluatorRow.style.cssText = "max-width:280px;margin-bottom:16px;";
+  evaluatorRow.innerHTML = `<label>評価者(${entrySelectedPeriod}分)</label>`;
+  const evaluatorSelect = document.createElement("select");
+  evaluatorSelect.innerHTML = `<option value="">未選択</option>` + EVALUATORS.map(name=>`<option value="${name}" ${periodData.evaluator===name?"selected":""}>${name}</option>`).join("");
+  evaluatorSelect.onchange = ()=>{ periodData.evaluator = evaluatorSelect.value; };
+  evaluatorRow.appendChild(evaluatorSelect);
+  card.appendChild(evaluatorRow);
+
+  const tableWrap = document.createElement("div");
+  tableWrap.className = "paper-table-wrap";
+  const table = document.createElement("table");
+  table.className = "paper-table";
+  const tbody = document.createElement("tbody");
+
+  CATEGORIES.forEach(cat=>{
+    cat.items.forEach((it, idx)=>{
+      const tr = document.createElement("tr");
+      if(idx===0){
+        const catTd = document.createElement("td");
+        catTd.className = "cat-col " + CAT_CLASS[cat.id];
+        catTd.rowSpan = cat.items.length;
+        catTd.textContent = cat.label;
+        tr.appendChild(catTd);
+      }
+      const nameTd = document.createElement("td");
+      nameTd.className = "item-col";
+      nameTd.textContent = it.name;
+      tr.appendChild(nameTd);
+
+      const optsTd = document.createElement("td");
+      optsTd.className = "opts-col";
+      const chipGroup = document.createElement("div");
+      chipGroup.className = "chip-group";
+      const current = periodData.scores[it.name] ?? 0;
+      for(let v=0; v<=it.max; v++){
+        const chip = document.createElement("button");
+        chip.className = "chip-btn" + (v===current ? " selected" : "");
+        chip.textContent = v;
+        chip.onclick = ()=>{ periodData.scores[it.name] = v; render(); };
+        chipGroup.appendChild(chip);
+      }
+      optsTd.appendChild(chipGroup);
+      tr.appendChild(optsTd);
+      tbody.appendChild(tr);
     });
-    card.appendChild(grid);
+  });
+  table.appendChild(tbody);
+  tableWrap.appendChild(table);
+  card.appendChild(tableWrap);
 
-    const saveRow = document.createElement("div");
-    saveRow.style.cssText = "margin-top:18px;display:flex;justify-content:flex-end;gap:10px;";
-    const saveBtn = document.createElement("button");
-    saveBtn.className = "primary";
-    saveBtn.textContent = "保存する(全員に共有)";
-    saveBtn.onclick = ()=>{
-      editingForm=false;
-      recordHistorySnapshot(staffObj.id, field, staffObj[field]);
-      saveState();
-    };
-    saveRow.appendChild(saveBtn);
-    card.appendChild(saveRow);
+  const bonusRow = document.createElement("div");
+  bonusRow.style.cssText = "margin-top:18px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:12px 4px;border-top:1px solid var(--line);";
+  const bonusLabel = document.createElement("div");
+  bonusLabel.style.cssText = "font-weight:800;font-size:13.5px;width:150px;";
+  bonusLabel.textContent = "加点";
+  bonusRow.appendChild(bonusLabel);
+  const bonusChips = document.createElement("div");
+  bonusChips.className = "chip-group";
+  [0,1].forEach(v=>{
+    const chip = document.createElement("button");
+    chip.className = "chip-btn" + (v===(periodData.bonus ?? 0) ? " selected" : "");
+    chip.textContent = v;
+    chip.onclick = ()=>{ periodData.bonus = v; render(); };
+    bonusChips.appendChild(chip);
+  });
+  bonusRow.appendChild(bonusChips);
+  const totalDisplay = document.createElement("div");
+  totalDisplay.style.cssText = "margin-left:auto;font-weight:800;font-size:15px;color:var(--ember-dark);";
+  totalDisplay.textContent = `合計点数: ${totalScore(periodData)}点 (★${starCount(periodData.scores)} + 加点${periodData.bonus ?? 0})`;
+  bonusRow.appendChild(totalDisplay);
+  card.appendChild(bonusRow);
 
-    // レーダーチャート: 個人 vs チーム平均
-    const avg = {};
-    items.forEach(it=>{
-      const vals = state.staff.map(x=> x[field][it.code] ?? 0);
-      avg[it.code] = vals.reduce((a,b)=>a+b,0)/vals.length;
-    });
-    const radarCard = document.createElement("div");
-    radarCard.className = "card";
-    radarCard.innerHTML = `
-      <div style="font-weight:800;font-size:13px;color:var(--muted);margin-bottom:8px;">${staffObj.name} vs チーム平均</div>
-      ${buildRadarSVG(items, staffObj[field], avg, 5)}
-      <div style="display:flex;gap:16px;justify-content:center;margin-top:6px;font-size:12px;color:var(--muted);flex-wrap:wrap;">
-        <span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:12px;height:12px;background:var(--ember);border-radius:3px;display:inline-block;"></span>${staffObj.name}</span>
-        <span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:16px;height:0;border-top:2px dashed var(--muted);display:inline-block;"></span>チーム平均</span>
-        <span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:16px;height:0;border-top:2px solid var(--green);display:inline-block;"></span>独り立ちライン(3点)</span>
-      </div>
-    `;
-    wrap.appendChild(card);
-    wrap.appendChild(radarCard);
+  const commentBlock = document.createElement("div");
+  commentBlock.style.marginTop = "18px";
+  const commentHead = document.createElement("label");
+  commentHead.textContent = `コメント(自由記述・${entrySelectedPeriod}分)`;
+  commentBlock.appendChild(commentHead);
+  const commentArea = document.createElement("textarea");
+  commentArea.placeholder = "所感・特記事項など";
+  commentArea.value = periodData.comment || "";
+  commentArea.oninput = ()=>{ periodData.comment = commentArea.value; };
+  commentBlock.appendChild(commentArea);
+  card.appendChild(commentBlock);
 
-    // 推移(選んだ項目の、本人とチーム平均の折れ線)
-    const allCodes = items.map(it=>it.code);
-    let trendItem = isPos ? posTrendItem : taskTrendItem;
-    if(!trendItem) trendItem = OVERALL_TREND_KEY;
-    const trendCard = document.createElement("div");
-    trendCard.className = "card";
-    const trendHead = document.createElement("div");
-    trendHead.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;";
-    trendHead.innerHTML = `<div style="font-weight:800;font-size:13px;color:var(--muted);">${staffObj.name} の推移</div>`;
-    const trendSel = document.createElement("select");
-    trendSel.style.maxWidth = "200px";
-    trendSel.innerHTML = `<option value="${OVERALL_TREND_KEY}" ${trendItem===OVERALL_TREND_KEY?"selected":""}>総合評価</option>` +
-      items.map(it=>`<option value="${it.code}" ${it.code===trendItem?"selected":""}>${it.code}${it.name?"("+it.name+")":""}</option>`).join("");
-    trendSel.onchange = ()=>{
-      if(isPos) posTrendItem = trendSel.value; else taskTrendItem = trendSel.value;
-      render();
-    };
-    trendHead.appendChild(trendSel);
-    trendCard.appendChild(trendHead);
+  const saveRow = document.createElement("div");
+  saveRow.style.cssText = "margin-top:18px;display:flex;justify-content:flex-end;";
+  const saveBtn = document.createElement("button");
+  saveBtn.className = "primary";
+  saveBtn.textContent = `${entrySelectedPeriod}分を保存する(全員に共有)`;
+  saveBtn.onclick = ()=> saveState();
+  saveRow.appendChild(saveBtn);
+  card.appendChild(saveRow);
 
-    const indSeries = getItemHistorySeries(staffObj.id, field, trendItem, allCodes);
-    const avgSeries = getItemAverageSeries(field, trendItem, allCodes);
-    const chartWrap = document.createElement("div");
-    chartWrap.innerHTML = buildLineChartSVG(indSeries, avgSeries, 5);
-    trendCard.appendChild(chartWrap);
-    if(indSeries.length > 0 || avgSeries.length > 0){
-      const trendLegend = document.createElement("div");
-      trendLegend.style.cssText = "display:flex;gap:16px;justify-content:center;margin-top:6px;font-size:12px;color:var(--muted);flex-wrap:wrap;";
-      trendLegend.innerHTML = `
-        <span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:16px;height:0;border-top:2.5px solid var(--ember);display:inline-block;"></span>${staffObj.name}</span>
-        <span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:16px;height:0;border-top:2px dashed var(--muted);display:inline-block;"></span>チーム平均</span>
-      `;
-      trendCard.appendChild(trendLegend);
-    }
-    wrap.appendChild(trendCard);
-
-    return wrap;
-  }
   wrap.appendChild(card);
   return wrap;
 }
 
-/* ---------- 目標 ---------- */
-let editingGoalId = null;
-let goalSortMode = "staff"; // staff(学年順) | due(期限順) | category(ホール/パントリー順)
-
-/* ポジションを「ホール」「パントリー」に分類(店の用語に合わせる) */
-const POSITION_GROUP = {
-  SL:"SL", IR:"ホール", ON:"ホール", HO:"ホール", KO:"ホール", ST:"ホール",
-  DS:"パントリー", DR:"パントリー", RH:"パントリー", DH:"パントリー", RDH:"パントリー",
-};
-const CATEGORY_ORDER = ["SL","ホール","パントリー","業務"];
-function itemCategory(itemStr){
-  const m = /^([A-Z]+)\(/.exec(itemStr||"");
-  if(m && POSITION_GROUP[m[1]]) return POSITION_GROUP[m[1]];
-  return "業務";
-}
-/* 目標の対象(業務名 or "CODE(名前)"形式のポジション)から、今の実際のスコアを引く */
-function currentScoreForGoal(staffObj, itemStr){
-  if(!staffObj) return null;
-  const m = /^([A-Z]+)\(/.exec(itemStr||"");
-  if(m && POSITION_GROUP[m[1]] && staffObj.positions && staffObj.positions[m[1]]!==undefined){
-    return staffObj.positions[m[1]];
-  }
-  if(staffObj.tasks && staffObj.tasks[itemStr]!==undefined){
-    return staffObj.tasks[itemStr];
-  }
-  return null;
-}
-function staffOrderIndex(staffId){
-  const i = state.staff.findIndex(s=>s.id===staffId);
-  return i===-1 ? 999 : i;
-}
-function sortGoalsList(list){
-  const arr = [...list];
-  if(goalSortMode==="due"){
-    arr.sort((a,b)=> a.due<b.due?-1:1);
-  } else if(goalSortMode==="category"){
-    arr.sort((a,b)=>{
-      const ca = CATEGORY_ORDER.indexOf(itemCategory(a.item));
-      const cb = CATEGORY_ORDER.indexOf(itemCategory(b.item));
-      if(ca!==cb) return ca-cb;
-      return staffOrderIndex(a.staffId) - staffOrderIndex(b.staffId);
-    });
-  } else {
-    arr.sort((a,b)=> staffOrderIndex(a.staffId) - staffOrderIndex(b.staffId));
-  }
-  return arr;
-}
-
-function goalStatus(g){
-  if(g.done) return "done";
-  if(g.due && g.due < todayISO()) return "overdue";
-  return "progress";
-}
-function goalEditForm(g){
-  const form = document.createElement("div");
-  form.className = "edit-form";
-  form.innerHTML = `
-    <select class="eg-staff">${state.staff.map(s=>`<option value="${s.id}" ${s.id===g.staffId?"selected":""}>${s.name}</option>`).join("")}</select>
-    <div class="row2">
-      <select class="eg-item" style="flex:1;">${goalItemOptionsHTML(g.item)}</select>
-      <input class="eg-score" type="number" min="0" max="5" value="${g.targetScore}" style="width:70px;">
-    </div>
-    <input class="eg-due" type="date" value="${g.due}">
-    <textarea class="eg-note" placeholder="メモ">${esc(g.note)}</textarea>
-    <div style="display:flex;gap:8px;justify-content:flex-end;">
-      <button class="ghost small eg-cancel">キャンセル</button>
-      <button class="primary eg-save">保存</button>
-    </div>
-  `;
-  form.querySelector(".eg-cancel").onclick = ()=>{ editingGoalId=null; render(); };
-  form.querySelector(".eg-save").onclick = ()=>{
-    g.staffId = form.querySelector(".eg-staff").value;
-    g.item = form.querySelector(".eg-item").value;
-    g.targetScore = Number(form.querySelector(".eg-score").value);
-    g.due = form.querySelector(".eg-due").value;
-    g.note = form.querySelector(".eg-note").value;
-    editingGoalId = null;
-    saveState(); render();
-  };
-  return form;
-}
-function goalRow(g){
-  const staffObj = state.staff.find(s=>s.id===g.staffId);
-  const status = goalStatus(g);
-  const row = document.createElement("div");
-  row.className = "item-row";
-  const badgeCls = status==="done"?"done":status==="overdue"?"overdue":"progress";
-  const badgeLbl = status==="done"?"達成済み":status==="overdue"?"期限切れ":"進行中";
-  const current = currentScoreForGoal(staffObj, g.item);
-  const pct = current===null ? 0 : Math.max(0, Math.min(100, (current/g.targetScore)*100));
-  const barColor = current!==null && current>=g.targetScore ? "var(--green)" : "var(--ember)";
-  const progressHTML = current===null
-    ? `<div class="meta" style="margin-top:6px;">現在のスコアと紐付けできませんでした</div>`
-    : `<div style="margin-top:8px;">
-        <div style="background:var(--gray-bg);border-radius:20px;height:8px;overflow:hidden;">
-          <div style="width:${pct}%;height:100%;background:${barColor};border-radius:20px;"></div>
-        </div>
-        <div class="meta" style="margin-top:3px;">現在 ${current}点 / 目標 ${g.targetScore}点</div>
-      </div>`;
-  row.innerHTML = `
-    <div style="flex:1;">
-      <div><strong>${staffObj?.name ?? "(不明)"}</strong> - ${g.item} 目標${g.targetScore}点 <span class="badge ${badgeCls}">${badgeLbl}</span></div>
-      <div class="meta">期限 ${g.due}${g.note?" ・ "+esc(g.note):""}</div>
-      ${progressHTML}
-    </div>
-  `;
-  const actions = document.createElement("div");
-  actions.className = "item-actions";
-  const toggleBtn = document.createElement("button");
-  toggleBtn.className = "ghost small";
-  toggleBtn.textContent = g.done ? "進行中に戻す" : "達成にする";
-  toggleBtn.onclick = ()=>{ g.done = !g.done; saveState(); render(); };
-  const editBtn = document.createElement("button");
-  editBtn.className = "ghost small";
-  editBtn.textContent = "編集";
-  editBtn.onclick = ()=>{ editingGoalId = g.id; render(); };
-  const delBtn = document.createElement("button");
-  delBtn.className = "ghost small";
-  delBtn.textContent = "削除";
-  delBtn.onclick = ()=>{
-    state.goals = state.goals.filter(x=>x.id!==g.id);
-    saveState(); render();
-  };
-  actions.appendChild(toggleBtn);
-  actions.appendChild(editBtn);
-  actions.appendChild(delBtn);
-  row.appendChild(actions);
-  return row;
-}
-
-function renderGoals(){
-  if(!Array.isArray(state.goals)) state.goals = [];
-  const wrap = document.createElement("div");
-  wrap.appendChild(titleEl());
+/* ============================== 評価ガイドライン ============================== */
+function glCard(title, innerHTML){
   const card = document.createElement("div");
   card.className = "card";
-  const f = document.createElement("div");
-  f.style.cssText = "display:flex;flex-direction:column;gap:10px;margin-bottom:14px;";
-  f.innerHTML = `
-    <div><label>スタッフ</label><select id="g-staff">${state.staff.map(s=>`<option value="${s.id}">${s.name}</option>`).join("")}</select></div>
-    <div class="row">
-      <div class="grow"><label>対象(業務 / ポジション)</label><select id="g-item">${goalItemOptionsHTML(null)}</select></div>
-      <div class="grow"><label>目標点</label><input type="number" id="g-score" min="0" max="5" value="3"></div>
-    </div>
-    <div><label>期限</label><input type="date" id="g-due" value="${todayISO()}"></div>
-    <div><label>メモ</label><textarea id="g-note" placeholder="狙い・背景など"></textarea></div>
-  `;
-  card.appendChild(f);
-  const addBtn = document.createElement("button");
-  addBtn.className = "primary";
-  addBtn.textContent = "目標を追加(全員に共有)";
-  addBtn.onclick = ()=>{
-    state.goals.push({
-      id:"g"+Date.now(),
-      staffId: document.getElementById("g-staff").value,
-      item: document.getElementById("g-item").value,
-      targetScore: Number(document.getElementById("g-score").value),
-      due: document.getElementById("g-due").value,
-      note: document.getElementById("g-note").value,
-      done: false,
-    });
-    saveState(); render();
-  };
-  card.appendChild(addBtn);
-
-  const groups = [
-    {key:"overdue",  label:"期限切れ"},
-    {key:"progress", label:"進行中"},
-    {key:"done",     label:"達成済み"},
-  ];
-
-  const sortRow = document.createElement("div");
-  sortRow.className = "row";
-  sortRow.style.cssText = "margin-top:16px;margin-bottom:4px;";
-  sortRow.innerHTML = `
-    <div class="grow" style="max-width:240px;">
-      <label>並び順</label>
-      <select id="goal-sort">
-        <option value="staff" ${goalSortMode==="staff"?"selected":""}>スタッフ順(学年順)</option>
-        <option value="due" ${goalSortMode==="due"?"selected":""}>期限順</option>
-        <option value="category" ${goalSortMode==="category"?"selected":""}>項目順(ホール/パントリー)</option>
-      </select>
-    </div>
-  `;
-  sortRow.querySelector("#goal-sort").onchange = (e)=>{ goalSortMode = e.target.value; render(); };
-  card.appendChild(sortRow);
-
-  const listWrap = document.createElement("div");
-  listWrap.style.marginTop = "10px";
-  const sortedGoals = sortGoalsList(state.goals);
-  if(sortedGoals.length===0){
-    listWrap.innerHTML = `<div class="empty">目標はまだありません</div>`;
-  } else {
-    groups.forEach(grp=>{
-      const items = sortedGoals.filter(g=> goalStatus(g)===grp.key);
-      const head = document.createElement("div");
-      head.className = "section-head";
-      head.innerHTML = `${grp.label} <span class="count-pill">${items.length}</span>`;
-      listWrap.appendChild(head);
-      if(items.length===0){
-        const e = document.createElement("div");
-        e.className = "empty";
-        e.textContent = "なし";
-        listWrap.appendChild(e);
-      } else {
-        items.forEach(g=>{
-          listWrap.appendChild(g.id===editingGoalId ? goalEditForm(g) : goalRow(g));
-        });
-      }
-    });
-  }
-  card.appendChild(listWrap);
-  wrap.appendChild(card);
-  return wrap;
+  card.innerHTML = `<div style="font-weight:800;font-size:15px;margin-bottom:10px;color:var(--ember-dark);">${title}</div>${innerHTML}`;
+  return card;
 }
-
-/* ---------- 教育ログ ---------- */
-let editingLogId = null;
-
-function logEditForm(l){
-  const form = document.createElement("div");
-  form.className = "edit-form";
-  form.innerHTML = `
-    <div class="row2">
-      <select class="el-staff" style="flex:1;">${state.staff.map(s=>`<option value="${s.id}" ${s.id===l.staffId?"selected":""}>${s.name}</option>`).join("")}</select>
-      <select class="el-trainer" style="flex:1;">${state.staff.map(s=>`<option value="${s.id}" ${s.id===l.trainerId?"selected":""}>${s.name}</option>`).join("")}</select>
-    </div>
-    <div class="row2">
-      <select class="el-item" style="flex:1;">${goalItemOptionsHTML(l.item)}</select>
-      <input class="el-date" type="date" value="${l.date}" style="flex:1;">
-    </div>
-    <textarea class="el-memo" placeholder="メモ">${esc(l.memo)}</textarea>
-    <div style="display:flex;gap:8px;justify-content:flex-end;">
-      <button class="ghost small el-cancel">キャンセル</button>
-      <button class="primary el-save">保存</button>
-    </div>
-  `;
-  form.querySelector(".el-cancel").onclick = ()=>{ editingLogId=null; render(); };
-  form.querySelector(".el-save").onclick = ()=>{
-    l.staffId = form.querySelector(".el-staff").value;
-    l.trainerId = form.querySelector(".el-trainer").value;
-    l.item = form.querySelector(".el-item").value;
-    l.date = form.querySelector(".el-date").value;
-    l.memo = form.querySelector(".el-memo").value;
-    editingLogId = null;
-    saveState(); render();
-  };
-  return form;
-}
-function logRow(l){
-  const staffObj = state.staff.find(s=>s.id===l.staffId);
-  const trainerObj = state.staff.find(s=>s.id===l.trainerId);
-  const row = document.createElement("div");
-  row.className = "item-row";
-  row.innerHTML = `
-    <div>
-      <div><strong>${staffObj?.name ?? "(不明)"}</strong> <span class="badge">${l.item}</span></div>
-      <div class="meta">担当: ${trainerObj?.name ?? "(不明)"} ・ ${l.date}</div>
-      ${l.memo ? `<div class="meta">${esc(l.memo)}</div>` : ""}
-    </div>
-  `;
-  const actions = document.createElement("div");
-  actions.className = "item-actions";
-  const editBtn = document.createElement("button");
-  editBtn.className = "ghost small";
-  editBtn.textContent = "編集";
-  editBtn.onclick = ()=>{ editingLogId = l.id; render(); };
-  const delBtn = document.createElement("button");
-  delBtn.className = "ghost small";
-  delBtn.textContent = "削除";
-  delBtn.onclick = ()=>{
-    state.logs = state.logs.filter(x=>x.id!==l.id);
-    saveState(); render();
-  };
-  actions.appendChild(editBtn);
-  actions.appendChild(delBtn);
-  row.appendChild(actions);
-  return row;
-}
-
-function renderLogs(){
-  if(!Array.isArray(state.logs)) state.logs = [];
+function renderGuideline(){
   const wrap = document.createElement("div");
-  wrap.appendChild(titleEl());
-  const card = document.createElement("div");
-  card.className = "card";
-  const f = document.createElement("div");
-  f.style.cssText = "display:flex;flex-direction:column;gap:10px;margin-bottom:14px;";
-  f.innerHTML = `
-    <div class="row">
-      <div class="grow"><label>対象者</label><select id="l-staff">${state.staff.map(s=>`<option value="${s.id}">${s.name}</option>`).join("")}</select></div>
-      <div class="grow"><label>トレーナー</label><select id="l-trainer">${state.staff.map(s=>`<option value="${s.id}">${s.name}</option>`).join("")}</select></div>
-    </div>
-    <div class="row">
-      <div class="grow"><label>項目(業務 / ポジション)</label><select id="l-item">${goalItemOptionsHTML(null)}</select></div>
-      <div class="grow"><label>教育した日付</label><input type="date" id="l-date" value="${todayISO()}"></div>
-    </div>
-    <div><label>メモ</label><textarea id="l-memo" placeholder="所感・気づき"></textarea></div>
-  `;
-  card.appendChild(f);
-  const addBtn = document.createElement("button");
-  addBtn.className = "primary";
-  addBtn.textContent = "ログを追加(全員に共有)";
-  addBtn.onclick = ()=>{
-    state.logs.unshift({
-      id:"l"+Date.now(),
-      staffId: document.getElementById("l-staff").value,
-      trainerId: document.getElementById("l-trainer").value,
-      item: document.getElementById("l-item").value,
-      memo: document.getElementById("l-memo").value,
-      date: document.getElementById("l-date").value,
-    });
-    saveState(); render();
-  };
-  card.appendChild(addBtn);
+  const h = document.createElement("h2");
+  h.className = "title";
+  h.textContent = "評価ガイドライン";
+  wrap.appendChild(h);
 
-  const list = document.createElement("div");
-  list.style.marginTop = "16px";
-  const sortedLogs = [...state.logs].sort((a,b)=> a.date<b.date?1:-1);
-  if(sortedLogs.length===0){
-    list.innerHTML = `<div class="empty">教育ログはまだありません</div>`;
-  } else {
-    sortedLogs.forEach(l=>{
-      list.appendChild(l.id===editingLogId ? logEditForm(l) : logRow(l));
-    });
-  }
-  card.appendChild(list);
-  wrap.appendChild(card);
-  return wrap;
-}
+  const listStyle = "margin:0;padding-left:18px;font-size:13.5px;line-height:1.9;color:var(--ink);";
 
-/* ---------- スタッフ管理(採用・退職をシステム上だけで完結させる) ---------- */
-let editingStaffId = null;
+  wrap.appendChild(glCard("評価の目的", `
+    <ul style="${listStyle}">
+      <li>公平で納得感のある評価を通じて、スタッフの育成とモチベーション向上を図る</li>
+      <li>スキル到達度・協力姿勢・統率力など、実務+行動を可視化する</li>
+      <li>昇格・指導対象・配置判断の基準資料として活用する</li>
+    </ul>
+  `));
 
-function blankScoreSet(keys){
-  const o = {};
-  keys.forEach(k=> o[k] = 0);
-  return o;
-}
-function staffEditForm(st){
-  const form = document.createElement("div");
-  form.className = "edit-form";
-  form.innerHTML = `
-    <div class="row2">
-      <input type="text" class="es-name" placeholder="氏名" value="${esc(st.name)}" style="flex:2;">
-      <select class="es-rank" style="flex:1;">${RANK_ORDER.map(r=>`<option value="${r}" ${r===st.rank?"selected":""}>${r}</option>`).join("")}</select>
+  wrap.appendChild(glCard("評価月・時給反映", `
+    <div style="font-size:13.5px;line-height:1.9;">
+      評価は <strong>7月・10月・1月・4月</strong>(年4回)。時給への反映は <strong>5月・11月</strong> に実施。
     </div>
-    <div><label>入社日</label><input type="date" class="es-hire" value="${st.hireDate||""}"></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;">
-      <button class="ghost small es-cancel">キャンセル</button>
-      <button class="primary es-save">保存</button>
-    </div>
-  `;
-  form.querySelector(".es-cancel").onclick = ()=>{ editingStaffId=null; render(); };
-  form.querySelector(".es-save").onclick = ()=>{
-    const name = form.querySelector(".es-name").value.trim();
-    if(!name) return;
-    st.name = name;
-    st.rank = form.querySelector(".es-rank").value;
-    st.hireDate = form.querySelector(".es-hire").value || "";
-    editingStaffId = null;
-    saveState(); render();
-  };
-  return form;
-}
-function staffRow(st){
-  const row = document.createElement("div");
-  row.className = "item-row";
-  row.innerHTML = `
-    <div>
-      <div><strong>${esc(st.name)}</strong> <span class="rank-chip">${st.rank}</span></div>
-      <div class="meta">勤続 ${computeTenureText(st.hireDate)}${st.hireDate?" ・ 入社日 "+st.hireDate:""}</div>
-    </div>
-  `;
-  const actions = document.createElement("div");
-  actions.className = "item-actions";
-  const editBtn = document.createElement("button");
-  editBtn.className = "ghost small";
-  editBtn.textContent = "編集";
-  editBtn.onclick = ()=>{ editingStaffId = st.id; render(); };
-  const delBtn = document.createElement("button");
-  delBtn.className = "ghost small";
-  delBtn.textContent = "削除";
-  delBtn.onclick = ()=>{
-    if(!confirm(`${st.name}さんを削除します。評価・目標・教育ログの記録は残りますが、一覧からは見えなくなります。よろしいですか?`)) return;
-    state.staff = state.staff.filter(x=>x.id!==st.id);
-    saveState(); render();
-  };
-  actions.appendChild(editBtn);
-  actions.appendChild(delBtn);
-  row.appendChild(actions);
-  return row;
-}
+  `));
 
-function renderStaffManagement(){
-  const wrap = document.createElement("div");
-  wrap.appendChild(titleEl());
+  wrap.appendChild(glCard("評価フロー", `
+    <ol style="${listStyle}">
+      <li><strong>一次評価</strong>:幹部 → 一般スタッフ(評価月の第1週目まで)</li>
+      <li><strong>二次評価</strong>:社員・リーダー → 幹部(評価月の第2週目まで)</li>
+      <li><strong>最終評価</strong>:店長 → 幹部・社員評価をもとに判断(評価月の第3週目まで)</li>
+    </ol>
+  `));
 
-  const card = document.createElement("div");
-  card.className = "card";
-  card.innerHTML = `<div style="font-weight:800;margin-bottom:10px;">新しいスタッフを追加</div>`;
-  const f = document.createElement("div");
-  f.style.cssText = "display:flex;flex-direction:column;gap:10px;";
-  f.innerHTML = `
-    <div class="row">
-      <div class="grow"><label>氏名</label><input type="text" id="ns-name" placeholder="例: 山田 太郎"></div>
-      <div class="grow" style="max-width:140px;"><label>学年</label><select id="ns-rank">${RANK_ORDER.map(r=>`<option value="${r}">${r}</option>`).join("")}</select></div>
-      <div class="grow" style="max-width:180px;"><label>入社日</label><input type="date" id="ns-hire" value="${todayISO()}"></div>
-    </div>
-  `;
-  card.appendChild(f);
-  const addBtn = document.createElement("button");
-  addBtn.className = "primary";
-  addBtn.style.marginTop = "10px";
-  addBtn.textContent = "追加(全員に共有)";
-  addBtn.onclick = ()=>{
-    const name = document.getElementById("ns-name").value.trim();
-    const rank = document.getElementById("ns-rank").value;
-    const hireDate = document.getElementById("ns-hire").value || "";
-    if(!name) return;
-    if(state.staff.some(s=>s.name===name)){
-      alert("同じ名前のスタッフが既に登録されています。");
-      return;
-    }
-    const maxId = state.staff.reduce((m,st)=> Math.max(m, Number(st.id)||0), 0);
-    state.staff.push({
-      id: String(maxId+1), name, rank, hireDate,
-      positions: blankScoreSet(POSITIONS.map(p=>p.code)),
-      tasks: blankScoreSet(TASK_ITEMS),
-      note: "",
-    });
-    document.getElementById("ns-name").value = "";
-    saveState(); render();
-  };
-  card.appendChild(addBtn);
-  wrap.appendChild(card);
+  wrap.appendChild(glCard("評価時のチェックポイント(主要5カテゴリ)", `
+    <ul style="${listStyle}">
+      <li><strong>オペレーション</strong>:1人で任せられるレベルか/ピーク時対応可/他者のフォローができるか</li>
+      <li><strong>従業員統率</strong>:状況を見て的確に指示できているか/ポジション調整・シフト誘導ができているか</li>
+      <li><strong>予約管理</strong>:繁忙時間の配席対応・来客調整ができているか/土日も自立して案内できるか</li>
+      <li><strong>肉カット</strong>:部位の理解・見た目・歩留まり/内臓・霜降りの仕上がりが一定水準以上か</li>
+      <li><strong>シフト作成</strong>:稼働効率と公平性/欠勤時の柔軟対応/人件費・スキル配置バランスが考慮されているか</li>
+    </ul>
+  `));
 
-  const listCard = document.createElement("div");
-  listCard.className = "card";
-  listCard.innerHTML = `<div style="font-weight:800;margin-bottom:6px;">在籍スタッフ一覧(${state.staff.length}名)</div>`;
-  const sorted = [...state.staff].sort((a,b)=> rankIndex(a.rank)-rankIndex(b.rank));
-  sorted.forEach(st=>{
-    listCard.appendChild(st.id===editingStaffId ? staffEditForm(st) : staffRow(st));
-  });
-  wrap.appendChild(listCard);
+  wrap.appendChild(glCard("評価の判断基準(0〜5点の目安)", `
+    <div class="table-wrap"><table style="font-size:13px;table-layout:fixed;">
+      <tbody>
+        <tr><td style="width:50px;font-weight:800;text-align:center;">0点</td><td style="text-align:left;padding-left:10px;white-space:normal;">未経験・理解不足・まったく対応できない</td></tr>
+        <tr><td style="font-weight:800;text-align:center;">1点</td><td style="text-align:left;padding-left:10px;white-space:normal;">一部できるが、常に指示・フォローが必要</td></tr>
+        <tr><td style="font-weight:800;text-align:center;">2点</td><td style="text-align:left;padding-left:10px;white-space:normal;">一通りはこなせるが、ミス・スピード・対応力に課題がある</td></tr>
+        <tr style="background:var(--amber-bg);"><td style="font-weight:800;text-align:center;">3点</td><td style="text-align:left;padding-left:10px;white-space:normal;">安定して任せられる。1人で対応可能 <strong>(この点数で★一つ)</strong></td></tr>
+        <tr><td colspan="2" style="text-align:left;padding:8px 10px;font-weight:800;color:var(--ember-dark);white-space:normal;">幹部以上になってからの加点部分</td></tr>
+        <tr><td style="font-weight:800;text-align:center;">4点</td><td style="text-align:left;padding-left:10px;white-space:normal;">忙しい時間でも主力。周囲のフォローや他者指導もできる</td></tr>
+        <tr><td style="font-weight:800;text-align:center;">5点</td><td style="text-align:left;padding-left:10px;white-space:normal;">指導者レベル。他者への教育・改善提案ができ、中心人物となっている</td></tr>
+      </tbody>
+    </table></div>
+  `));
+
+  wrap.appendChild(glCard("項目別の補足基準", `
+    <ul style="${listStyle}">
+      <li><strong>行事参加</strong>(基本参加している=○):氏神様掃除・経営理念勉強会・大掃除・経営計画</li>
+      <li><strong>遅刻・欠勤</strong>:遅刻は月1回以内、欠勤は月1回以内が基準(代理を立てれば0扱い)</li>
+      <li><strong>肉カット</strong>:内臓系・ジューシー(ハラミ)・霜降り(Gランチ材)</li>
+      <li><strong>不足への協力</strong>:オープン準備・ラスト作業・不足時の応援移動</li>
+      <li><strong>服務規律・シフト提出</strong>:どちらも注意1回まではセーフ</li>
+      <li><strong>姿勢のルール</strong>:明るい挨拶・靴を揃える・出退勤の徹底</li>
+      <li><strong>教育・評価</strong>:幹部入り/技術指導できる(トレーナー教本を使用)/フォローできる/評価できる、の段階で判断。ホール・キッチンいずれも3項目以上で④点評価を待っている状態か確認する</li>
+    </ul>
+  `));
+
+  wrap.appendChild(glCard("加点・特記事項", `
+    <ul style="${listStyle}">
+      <li>①〜③(3点)まで到達すると★が一つつく</li>
+      <li>発注(特殊加点):1点</li>
+      <li>主要品目の発注対象:タレ・野菜・UCC・三和・服部・米</li>
+    </ul>
+  `));
 
   return wrap;
 }
 
-
-let memoSaveTimer = null;
-function scheduleMemoSave(){
-  clearTimeout(memoSaveTimer);
-  memoSaveTimer = setTimeout(()=>{
-    state.memoUpdatedBy = currentPersonName || state.memoUpdatedBy || null;
-    state.memoUpdatedAt = new Date().toISOString();
-    saveState();
-  }, 1200);
-}
-function formatMemoTime(iso){
-  if(!iso) return "";
-  return new Date(iso).toLocaleString("ja-JP",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"});
-}
-
-function renderMemo(){
-  if(typeof state.memoText !== "string") state.memoText = "";
-  const wrap = document.createElement("div");
-  wrap.appendChild(titleEl());
-
-  if(state.memoUpdatedAt){
-    const metaLine = document.createElement("div");
-    metaLine.className = "meta";
-    metaLine.style.marginBottom = "10px";
-    metaLine.textContent = `最終更新: ${state.memoUpdatedBy || "不明"} ・ ${formatMemoTime(state.memoUpdatedAt)}`;
-    wrap.appendChild(metaLine);
-  }
-
-  const card = document.createElement("div");
-  card.className = "card";
-  const textarea = document.createElement("textarea");
-  textarea.id = "memo-freeform";
-  textarea.value = state.memoText;
-  textarea.placeholder = "ここに自由に書いてください。";
-  textarea.style.cssText = "width:100%;min-height:62vh;border:none;outline:none;resize:vertical;font-size:15.5px;line-height:1.8;padding:4px;background:transparent;font-family:inherit;height:auto;";
-  textarea.addEventListener("input", ()=>{
-    state.memoText = textarea.value;
-    scheduleMemoSave();
-  });
-  card.appendChild(textarea);
-  wrap.appendChild(card);
-
-  wrap.appendChild(renderLoginUsersPanel());
-  return wrap;
-}
-
-let loginUsersOpen = false;
-function renderLoginUsersPanel(){
-  const box = document.createElement("div");
-  const toggle = document.createElement("button");
-  toggle.className = "ghost small";
-  toggle.style.marginTop = "12px";
-  toggle.textContent = loginUsersOpen ? "ログイン専用ユーザーの管理を閉じる" : "＋ 一覧にいない人にログインだけしてもらう";
-  toggle.onclick = ()=>{ loginUsersOpen = !loginUsersOpen; render(); };
-  box.appendChild(toggle);
-
-  if(loginUsersOpen){
-    if(!Array.isArray(state.loginUsers)) state.loginUsers = [];
-    const card = document.createElement("div");
-    card.className = "card";
-    card.style.marginTop = "10px";
-    card.innerHTML = `<div class="meta" style="margin-bottom:10px;">評価対象(業務評価・ポジション評価)ではないが、ログインだけしてもらいたい人をここに登録します。ログインアカウントの作成もこの画面だけで完結します(Firebase側の操作は不要です)。</div>`;
-
-    const f = document.createElement("div");
-    f.className = "row";
-    f.innerHTML = `
-      <div class="grow"><label>氏名</label><input type="text" id="lu-name" placeholder="例: 山田 太郎"></div>
-      <div class="grow"><label>ログインコード</label><input type="text" id="lu-code" placeholder="例: 101"></div>
-      <div class="grow"><label>パスワード</label><input type="text" id="lu-pass" placeholder="ログイン用パスワード"></div>
-    `;
-    card.appendChild(f);
-    const errEl = document.createElement("div");
-    errEl.style.cssText = "color:var(--red);font-size:12.5px;margin-top:8px;min-height:14px;";
-    const addBtn = document.createElement("button");
-    addBtn.className = "primary";
-    addBtn.style.marginTop = "10px";
-    addBtn.textContent = "追加(全員に共有・ログイン発行まで実施)";
-    addBtn.onclick = async ()=>{
-      const name = document.getElementById("lu-name").value.trim();
-      const code = document.getElementById("lu-code").value.trim();
-      const password = document.getElementById("lu-pass").value;
-      errEl.textContent = "";
-      if(!name || !code || !password){
-        errEl.textContent = "氏名・コード・パスワードをすべて入力してください。";
-        return;
-      }
-      if(password.length < 6){
-        errEl.textContent = "パスワードは6文字以上にしてください(Firebaseの制限です)。";
-        return;
-      }
-      addBtn.disabled = true;
-      addBtn.textContent = "作成中...";
-      try{
-        await createLoginAccount(code, password);
-        state.loginUsers.push({ id:"u"+Date.now()+Math.random().toString(36).slice(2,6), name, loginCode: code });
-        saveState(); render();
-      }catch(e){
-        addBtn.disabled = false;
-        addBtn.textContent = "追加(全員に共有・ログイン発行まで実施)";
-        errEl.textContent = e.code==="auth/email-already-in-use"
-          ? "このコードは既に使われています。"
-          : "作成に失敗しました:" + (e.message||"");
-      }
-    };
-    card.appendChild(addBtn);
-    card.appendChild(errEl);
-
-    const list = document.createElement("div");
-    list.style.marginTop = "14px";
-    if(state.loginUsers.length===0){
-      list.innerHTML = `<div class="empty">まだ登録されていません</div>`;
-    } else {
-      state.loginUsers.forEach(u=>{
-        const row = document.createElement("div");
-        row.className = "item-row";
-        row.innerHTML = `<div><strong>${esc(u.name)}</strong><div class="meta">コード: ${esc(u.loginCode)}</div></div>`;
-        const delBtn = document.createElement("button");
-        delBtn.className = "ghost small";
-        delBtn.textContent = "削除";
-        delBtn.onclick = ()=>{
-          state.loginUsers = state.loginUsers.filter(x=>x.id!==u.id);
-          saveState(); render();
-        };
-        row.appendChild(delBtn);
-        list.appendChild(row);
-      });
-    }
-    card.appendChild(list);
-    box.appendChild(card);
-  }
-  return box;
-}
-
-
-/* ============================== 起動(Firebase Realtime Database と同期) ============================== */
-function applyTenureMigration(s){
-  let migrated = false;
-  // 勤続年数は入社日から毎回その場で計算するようになったので、テキストの同期は不要になった。
-  // ただし古い保存データに hireDate が無い(以前のバージョンで作られた)場合は Excel 由来の初期値を補完する。
-  const canonical = seedStaff();
-  s.staff.forEach(st=>{
-    if(st.hireDate === undefined){
-      const c = canonical.find(x=>x.name===st.name);
-      st.hireDate = (c && c.hireDate) ? c.hireDate : "";
-      migrated = true;
-    }
-  });
-  // Excel側で新しく増えたスタッフを、既存の評価・目標・ログを壊さずに追加する
-  // (canonicalのidは配列の並び順で決まるため、途中に人を挿入すると既存メンバーのidとズレて
-  //  衝突する恐れがある。新規追加分は既存データの最大id+1を使い、既存のidには触れない)
-  canonical.forEach(c=>{
-    if(!s.staff.some(st=>st.name===c.name)){
-      const maxId = s.staff.reduce((m,st)=> Math.max(m, Number(st.id)||0), 0);
-      s.staff.push({...c, id:String(maxId+1)});
-      migrated = true;
-    }
-  });
-  return migrated;
-}
-
-/* ---- パソコン/スマホ表示切り替え ---- */
-function applyDisplayMode(mode){
-  document.body.classList.toggle("mobile-mode", mode==="sp");
-  document.getElementById("mode-pc").classList.toggle("active", mode==="pc");
-  document.getElementById("mode-sp").classList.toggle("active", mode==="sp");
-  try{ localStorage.setItem("kaisenmon-display-mode", mode); }catch(e){}
-}
-(function initDisplayMode(){
-  let saved = null;
-  try{ saved = localStorage.getItem("kaisenmon-display-mode"); }catch(e){}
-  const initial = saved || (window.innerWidth <= 640 ? "sp" : "pc");
-  applyDisplayMode(initial);
-  document.getElementById("mode-pc").onclick = ()=> applyDisplayMode("pc");
-  document.getElementById("mode-sp").onclick = ()=> applyDisplayMode("sp");
+/* ============================== 起動 ============================== */
+(async function init(){
+  document.getElementById("main").innerHTML = `<div style="padding:30px;color:var(--muted);">読み込み中...</div>`;
+  state = await loadState();
+  lastSavedJSON = JSON.stringify(state);
+  setSyncStatus(true);
+  render();
 })();
-
-/* ---- ログイン後だけデータ同期を開始する ---- */
-/* ---- ログインコードから「今ログインしているのが誰か」を自動判定する。
-   評価対象の state.staff(26名)だけでなく、評価対象ではないがログインだけしたい人向けの
-   state.loginUsers も見て、名前を解決する。 ---- */
-let currentPersonName = null;
-function getLoginCode(){
-  const email = auth.currentUser?.email || "";
-  return email.split("@")[0];
-}
-function resolveCurrentPersonName(){
-  if(!state) return null;
-  const code = String(getLoginCode());
-  const staffMatch = (state.staff||[]).find(s=>String(s.loginCode)===code);
-  if(staffMatch) return staffMatch.name;
-  const userMatch = (state.loginUsers||[]).find(u=>String(u.loginCode)===code);
-  if(userMatch) return userMatch.name;
-  return null;
-}
-
-let appStarted = false;
-function startApp(){
-  if(appStarted) return;
-  appStarted = true;
-  document.getElementById("main").innerHTML = `<div class="empty">読み込み中...</div>`;
-
-  // フォーム内の入力欄にフォーカスがある間は「編集中」とみなし、
-  // 他の人の保存によるリアルタイム再描画で入力中の内容が消えないようにする。
-  // (これまではポジション/業務評価のスライダーだけ対策していたが、
-  //  目標・教育ログの追加/編集フォームは未対策で入力が消えるバグがあった)
-  const mainEl = document.getElementById("main");
-  mainEl.addEventListener("focusin", (e)=>{
-    if(["INPUT","SELECT","TEXTAREA"].includes(e.target.tagName)) editingForm = true;
-  });
-  mainEl.addEventListener("focusout", ()=>{
-    setTimeout(()=>{
-      const a = document.activeElement;
-      if(!a || !["INPUT","SELECT","TEXTAREA"].includes(a.tagName) || !mainEl.contains(a)){
-        editingForm = false;
-      }
-    }, 80);
-  });
-
-  // Firebase の接続状態そのものを監視(公式の特殊パス)
-  onValue(ref(db, ".info/connected"), (snap)=>{
-    setSyncStatus(snap.val() === true);
-  });
-
-  // データ本体をリアルタイム購読。誰かが保存すると、この関数が全員の画面で自動的に呼ばれる
-  onValue(stateRef, async (snapshot)=>{
-    const val = snapshot.val();
-    if(val === null){
-      // 初回アクセス:このプロジェクトにまだ何もデータが無い場合は新規シードする
-      // (会社用の新規Firebaseプロジェクトなので、現行本番からの移行ロジックは持たせていない)
-      if(!firstLoadDone){
-        state = defaultState();
-        firstLoadDone = true;
-        render();
-        saveState();
-      }
-      return;
-    }
-    if(editingForm && firstLoadDone){
-      // 入力中に他の人の更新が来た場合は、今の入力を壊さないよう取り込みを見送る
-      return;
-    }
-    state = val;
-    // Firebase Realtime Database は空配列([])を保存できず、キーごと消えてしまう。
-    // 目標・教育ログを全部削除すると undefined になり、画面が真っ白になっていたのを修正。
-    if(!Array.isArray(state.staff)) state.staff = [];
-    if(!Array.isArray(state.goals)) state.goals = [];
-    if(!Array.isArray(state.logs)) state.logs = [];
-    if(typeof state.memoText !== "string") state.memoText = "";
-    if(!Array.isArray(state.loginUsers)) state.loginUsers = [];
-    if(!Array.isArray(state.history)) state.history = [];
-    const migrated = applyTenureMigration(state);
-    const snapshotted = ensureTodaySnapshot();
-    currentPersonName = resolveCurrentPersonName();
-    firstLoadDone = true;
-    render();
-    if(migrated || snapshotted) saveState();
-  });
-}
-
-/* ---- ログイン画面の制御 ---- */
-/* Firebase Authenticationはメール形式のIDが必須のため、社員コードを内部的に
-   「コード@gaisenmon.local」という疑似メールアドレスに変換して使う。
-   実際にメールが送られることはなく、あくまで識別子として使うだけ。 */
-const LOGIN_DOMAIN = "gaisenmon.local";
-function codeToEmail(code){
-  return `${code.trim()}@${LOGIN_DOMAIN}`;
-}
-/* 管理者(今ログイン中の人)のセッションを維持したまま、新しいログインアカウントを作成する。
-   同じFirebaseアプリのAuthで直接作成すると管理者自身が新アカウントに切り替わってしまうため、
-   一時的な「別インスタンス」を作ってそこで作成し、使い終わったら破棄する。 */
-async function createLoginAccount(code, password){
-  const tempApp = initializeApp(firebaseConfig, "temp-"+Date.now());
-  const tempAuth = getAuth(tempApp);
-  try{
-    await createUserWithEmailAndPassword(tempAuth, codeToEmail(code), password);
-  } finally {
-    await deleteApp(tempApp);
-  }
-}
-document.getElementById("login-btn").onclick = async ()=>{
-  const code = document.getElementById("login-code").value.trim();
-  const password = document.getElementById("login-password").value;
-  const errEl = document.getElementById("login-error");
-  errEl.textContent = "";
-  if(!code || !password){
-    errEl.textContent = "社員コードとパスワードを入力してください。";
-    return;
-  }
-  try{
-    await signInWithEmailAndPassword(auth, codeToEmail(code), password);
-  }catch(e){
-    errEl.textContent = "ログインできませんでした。社員コードかパスワードをご確認ください。";
-  }
-};
-document.getElementById("login-code").addEventListener("keydown", (e)=>{
-  if(e.key === "Enter") document.getElementById("login-password").focus();
-});
-document.getElementById("login-password").addEventListener("keydown", (e)=>{
-  if(e.key === "Enter") document.getElementById("login-btn").click();
-});
-document.getElementById("logout-btn").onclick = ()=> signOut(auth);
-
-onAuthStateChanged(auth, (user)=>{
-  const loginScreen = document.getElementById("login-screen");
-  const app = document.getElementById("app");
-  if(user){
-    loginScreen.style.display = "none";
-    app.style.display = "";
-    startApp();
-  } else {
-    loginScreen.style.display = "flex";
-    app.style.display = "none";
-  }
-});
 </script>
-
 </body>
 </html>
