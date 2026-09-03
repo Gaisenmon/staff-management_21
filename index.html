@@ -39,16 +39,15 @@
   .brand h1{font-size:18px;margin:0;font-weight:800;letter-spacing:.02em;white-space:nowrap;}
   .brand .tag{font-size:11px;color:#C8BBA8;border:1px solid rgba(255,255,255,.25);border-radius:20px;padding:2px 10px;}
   .mode-toggle{
-    position:absolute;top:14px;right:22px;display:flex;gap:2px;
-    background:rgba(255,255,255,0.08);border-radius:20px;padding:2px;
+    display:flex;gap:2px;
+    background:rgba(255,255,255,0.08);border-radius:20px;padding:2px;flex:none;
   }
   .mode-toggle button{
     background:transparent;border:none;color:#C8BBA8;padding:4px 12px;
     font-size:11px;font-weight:700;border-radius:16px;cursor:pointer;font-family:inherit;
   }
   .mode-toggle button.active{background:var(--ember);color:#fff;}
-  header{position:relative;}
-  body.mobile-mode .mode-toggle{position:static;margin-bottom:10px;}
+  body.mobile-mode .mode-toggle{align-self:flex-start;}
 
   /* ===== スマホ専用モード(PC版のレイアウトとは完全に切り離した見た目) ===== */
   body.mobile-mode header{padding:14px 14px 0 14px;}
@@ -189,13 +188,15 @@
 </div>
 <div class="app" id="app" style="display:none;">
   <header>
-    <div class="mode-toggle" id="mode-toggle">
-      <button data-mode="pc">パソコン</button>
-      <button data-mode="mobile">スマホ</button>
-    </div>
-    <div class="brand" style="justify-content:space-between;">
+    <div class="brand" style="justify-content:space-between;align-items:flex-start;">
       <h1>凱旋門 ATS評価システム</h1>
-      <div id="top-right-slot" style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:none;"></div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
+        <div class="mode-toggle" id="mode-toggle">
+          <button data-mode="pc">パソコン</button>
+          <button data-mode="mobile">スマホ</button>
+        </div>
+        <div id="top-right-slot" style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:none;"></div>
+      </div>
     </div>
     <div class="sync-row"><span class="sync-dot" id="sync-dot"></span><span id="sync-label">同期状態を確認中...</span></div>
     <nav id="tabs"></nav>
@@ -206,7 +207,7 @@
 
 <script type="module">
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+import { getDatabase, ref, set, get, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword, updatePassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 /* ==============================================================
@@ -374,10 +375,52 @@ function migrateState(s){
   return s;
 }
 function defaultState(){ return { staff: seedStaff(), years: [INITIAL_YEAR], history: [], updatedAt: null }; }
+/* 直近にサーバーから受け取った状態(=自分がまだ書き込んでいない基準点)。
+   これと今の手元の state を比べることで「自分が実際に何を触ったか」を判定する。 */
+let lastServerState = null;
+
+/* 保存直前にサーバーの最新データを取り直し、自分が実際に触った部分(スタッフ・年度・履歴)だけを
+   その最新データに重ねてから書き込む。
+   理由:「編集中は他人の更新を取り込まない」ガードのせいで、長時間編集している間に
+   他の人が保存した内容を、自分の保存時にまるごと上書きして消してしまう事故があったため。 */
+function mergeStateForSave(latest, local, base){
+  const merged = {...latest};
+
+  const baseStaffMap = new Map((base?.staff||[]).map(s=>[s.id, s]));
+  const localStaffMap = new Map((local.staff||[]).map(s=>[s.id, s]));
+  const mergedStaffMap = new Map((latest.staff||[]).map(s=>[s.id, s])); // 基本は最新データを採用
+  localStaffMap.forEach((localSt, id)=>{
+    const baseSt = baseStaffMap.get(id);
+    const changed = !baseSt || JSON.stringify(baseSt) !== JSON.stringify(localSt);
+    if(changed || !mergedStaffMap.has(id)){
+      mergedStaffMap.set(id, localSt); // 自分が実際に触った(=基準点から変化した)人だけ、自分の値を優先
+    }
+  });
+  merged.staff = Array.from(mergedStaffMap.values());
+
+  // 年度は増える一方の情報なので、両方を合わせる
+  merged.years = Array.from(new Set([...(latest.years||[]), ...(local.years||[])])).sort();
+
+  // 変更履歴:自分が追加/削除して基準点から変わっていれば自分の内容を優先、そうでなければ最新を採用
+  const historyChanged = JSON.stringify(base?.history||[]) !== JSON.stringify(local.history||[]);
+  merged.history = historyChanged ? (local.history||[]) : (latest.history||[]);
+
+  return merged;
+}
 async function saveState(){
+  try{
+    const snap = await get(stateRef);
+    const latestRaw = snap.val();
+    if(latestRaw){
+      state = mergeStateForSave(migrateState(latestRaw), state, lastServerState);
+    }
+  }catch(e){
+    console.error("保存前の再取得に失敗。手元のデータでそのまま保存します", e);
+  }
   state.updatedAt = new Date().toISOString();
   try{
     await set(stateRef, state);
+    lastServerState = JSON.parse(JSON.stringify(state));
     showToast("保存しました(全員に共有されます)");
   }catch(e){
     console.error("save failed", e);
@@ -1185,12 +1228,21 @@ function storeCategoryAvgPct(year, period, cat){
   const sum = activeStaff.reduce((acc,s)=> acc + categoryPct(s.yearData[year][period].scores, cat), 0);
   return Math.round(sum / activeStaff.length);
 }
-const OPERATION_ITEMS = CATEGORIES.slice(0,3).flatMap(c=>c.items); // ①キッチン②ホール③特殊技能=15項目
+const OPERATION_ITEMS = CATEGORIES.slice(0,3).flatMap(c=>c.items.map(it=>({...it, categoryId:c.id}))); // ①キッチン②ホール③特殊技能=15項目
+/* ホール項目はホール+両方の人だけ、キッチン項目はキッチン+両方の人だけで平均を取る。
+   ③特殊技能はホール/キッチン専属どちらにも該当し得る項目のため絞り込まない。 */
+function affiliationMatchesItem(staffAffiliation, categoryId){
+  if(categoryId === "hall") return staffAffiliation === "ホール" || staffAffiliation === "両方";
+  if(categoryId === "kitchen") return staffAffiliation === "キッチン" || staffAffiliation === "両方";
+  return true;
+}
 function storeItemAvgPct(year, period, item){
-  const activeStaff = state.staff.filter(s=>s.status==="active" && s.yearData[year]);
-  if(activeStaff.length===0) return 0;
-  const sum = activeStaff.reduce((acc,s)=> acc + ((s.yearData[year][period].scores[item.name] ?? 0) / item.max * 100), 0);
-  return Math.round(sum / activeStaff.length);
+  const relevantStaff = state.staff.filter(s=>
+    s.status==="active" && s.yearData[year] && affiliationMatchesItem(s.affiliation, item.categoryId)
+  );
+  if(relevantStaff.length===0) return 0;
+  const sum = relevantStaff.reduce((acc,s)=> acc + ((s.yearData[year][period].scores[item.name] ?? 0) / item.max * 100), 0);
+  return Math.round(sum / relevantStaff.length);
 }
 function storeAverageTotal(year, period){
   const activeStaff = state.staff.filter(s=>s.status==="active" && s.yearData[year]);
@@ -1828,6 +1880,7 @@ function startApp(){
     if(val === null){
       if(!firstLoadDone){
         state = defaultState();
+        lastServerState = JSON.parse(JSON.stringify(state));
         firstLoadDone = true;
         currentPersonName = resolveCurrentPersonName();
         render();
@@ -1839,6 +1892,7 @@ function startApp(){
       return; // 編集中は他人の更新の取り込みを見送る(自分の未保存の変更を守る)
     }
     state = migrateState(val);
+    lastServerState = JSON.parse(JSON.stringify(state)); // 保存時の差分判定の基準点を更新
     currentPersonName = resolveCurrentPersonName();
     firstLoadDone = true;
     render();
