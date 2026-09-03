@@ -21,6 +21,8 @@
     --amber-bg:#FBF0DC;
     --gray-bg:#EFEAE1;
     --gray-ink:#9C9184;
+    --perfect:#B23A2E;
+    --perfect-bg:#FBE4E1;
     --cat-kitchen:#F5E7DA;
     --cat-hall:#E4EEF1;
     --cat-special:#EDE7F3;
@@ -76,6 +78,7 @@
   .score-cell.ready{background:var(--green-bg);color:var(--green);}
   .score-cell.mid{background:var(--amber-bg);color:var(--amber);}
   .score-cell.low{background:var(--gray-bg);color:var(--gray-ink);}
+  .score-cell.perfect{background:var(--perfect-bg);color:var(--perfect);}
   .legend{display:flex;gap:14px;margin:12px 2px 0;font-size:11.5px;color:var(--muted);flex-wrap:wrap;align-items:center;}
   .legend span{display:inline-flex;align-items:center;gap:5px;}
   .dot{width:10px;height:10px;border-radius:3px;display:inline-block;}
@@ -103,6 +106,18 @@
   .cat-attitude{background:var(--cat-attitude);}
   .chip-group{display:flex;gap:6px;flex-wrap:wrap;}
   .chip-btn{width:32px;height:32px;border-radius:50%;border:2px solid var(--line);background:#fff;font-weight:800;font-size:12.5px;color:var(--muted);cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;}
+  table.pcard-table{border-collapse:collapse;width:100%;min-width:640px;}
+  table.pcard-table td, table.pcard-table th{border:1px solid var(--line);}
+  table.pcard-table td{padding:8px 6px;text-align:center;vertical-align:middle;font-size:12.5px;background:#fff;}
+  table.pcard-table td.cat-col{width:100px;font-weight:800;font-size:12.5px;text-align:center;padding:10px 6px;border-right:2px solid var(--charcoal);}
+  table.pcard-table td.item-col{width:150px;text-align:left;padding:8px 12px;font-weight:700;white-space:nowrap;}
+  table.pcard-table th{padding:9px 6px;text-align:center;background:var(--charcoal);color:#EFE5D6;font-size:12.5px;white-space:nowrap;}
+  table.pcard-table th.item-col-head{text-align:left;padding-left:12px;}
+  .pcard-score{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;font-weight:800;font-size:13px;border:2px solid var(--line);color:var(--muted);}
+  .pcard-score.ready{background:var(--green-bg);color:var(--green);border-color:var(--green);}
+  .pcard-score.mid{background:var(--amber-bg);color:var(--amber);border-color:var(--amber);}
+  .pcard-score.low{background:var(--gray-bg);color:var(--gray-ink);border-color:var(--line);}
+  .pcard-score.perfect{background:var(--perfect-bg);color:var(--perfect);border-color:var(--perfect);}
   .chip-btn.selected{background:var(--ember);border-color:var(--ember);color:#fff;}
 
   button.primary{background:var(--ember);color:#fff;border:none;border-radius:8px;padding:10px 20px;font-weight:800;font-size:13.5px;cursor:pointer;font-family:inherit;}
@@ -205,6 +220,7 @@ const ALL_ITEMS = CATEGORIES.flatMap(c => c.items.map(it => ({...it, categoryId:
 const PERIODS = ["4月","7月","10月","1月"]; // 店長印のタイミング(年4回)に合わせた評価時期
 function starAt(max){ return Math.min(3, max); }
 function scoreClass(value, max){
+  if(max > 0 && value === max) return "perfect";
   const th = starAt(max);
   if(value >= th) return "ready";
   if(value >= 1) return "mid";
@@ -549,6 +565,7 @@ function diffAndLog(staffObj, year, period, before, after){
 const TABS = [
   {id:"dashboard",  label:"ATS評価ダッシュボード"},
   {id:"entry",      label:"ATS評価入力"},
+  {id:"personal",   label:"ATS評価-個人"},
   {id:"staffAdmin", label:"スタッフマスタ"},
   {id:"guideline",  label:"評価ガイドライン"},
   {id:"history",    label:"変更履歴"},
@@ -622,6 +639,7 @@ function render(){
   main.innerHTML = "";
   if(activeTab==="dashboard")  main.appendChild(renderDashboard());
   if(activeTab==="entry")      main.appendChild(renderEntry());
+  if(activeTab==="personal")   main.appendChild(renderPersonal());
   if(activeTab==="staffAdmin") main.appendChild(renderStaffAdmin());
   if(activeTab==="guideline")  main.appendChild(renderGuideline());
   if(activeTab==="history")    main.appendChild(renderHistory());
@@ -824,10 +842,10 @@ function renderDashboard(){
   const legend = document.createElement("div");
   legend.className = "legend";
   legend.innerHTML = `
-    <span><span class="dot" style="background:var(--green)"></span>基準達成(独り立ち・満点クリア)</span>
-    <span><span class="dot" style="background:var(--amber)"></span>基準未達だが経験あり</span>
-    <span><span class="dot" style="background:var(--gray-ink)"></span>0点・未経験</span>
-    <span style="margin-left:auto;">列見出しをクリックすると並び替えできます・上のボタンで4月/7月/10月/1月のデータを切り替え</span>
+    <span><span class="dot" style="background:var(--green)"></span>星獲得</span>
+    <span><span class="dot" style="background:var(--amber)"></span>トレーニング中</span>
+    <span><span class="dot" style="background:var(--gray-ink)"></span>未経験</span>
+    <span><span class="dot" style="background:var(--perfect)"></span>満点</span>
   `;
   card.appendChild(legend);
 
@@ -1106,7 +1124,118 @@ function renderEntry(){
   return wrap;
 }
 
-/* ============================== スタッフ管理 ============================== */
+/* ============================== ATS評価-個人(紙の評価票と同じ形で、4期間を横並びに表示。閲覧専用) ============================== */
+function renderPersonal(){
+  const wrap = document.createElement("div");
+  const h = document.createElement("h2");
+  h.className = "title";
+  h.textContent = `ATS評価-個人(${selectedYear}年度)`;
+  wrap.appendChild(h);
+
+  const card = document.createElement("div");
+  card.className = "card";
+  const picker = document.createElement("div");
+  picker.className = "staff-picker";
+  picker.innerHTML = `<label>対象スタッフ</label>`;
+  const pickerRow = document.createElement("div");
+  pickerRow.style.cssText = "display:flex;gap:10px;align-items:center;";
+  const sel = document.createElement("select");
+  sel.style.flex = "1";
+  const STATUS_LABEL = {active:"", leave:"(休職)", resigned:"(退職)"};
+  const visibleStaff = state.staff.filter(s => entryShowInactive || s.status==="active");
+  sel.innerHTML = visibleStaff.map(s=>`<option value="${s.id}">${s.name}${STATUS_LABEL[s.status]||""}</option>`).join("");
+  if(!entrySelectedId || !visibleStaff.some(s=>s.id===entrySelectedId)) entrySelectedId = visibleStaff[0]?.id;
+  sel.value = entrySelectedId;
+  sel.onchange = ()=>{ entrySelectedId = sel.value; render(); };
+  pickerRow.appendChild(sel);
+  picker.appendChild(pickerRow);
+  card.appendChild(picker);
+
+  const staffObj = state.staff.find(s=>s.id===entrySelectedId);
+  if(!staffObj){ wrap.appendChild(card); return wrap; }
+  if(!staffObj.yearData[selectedYear]) staffObj.yearData[selectedYear] = emptyPeriods();
+
+  const meta = document.createElement("div");
+  meta.className = "meta-row";
+  meta.innerHTML = `
+    <span>社員CD: <strong>${staffObj.code}</strong></span>
+    <span>雇用区分: <strong>${staffObj.employType}</strong></span>
+    <span>所属: <strong>${staffObj.affiliation}</strong></span>
+    <span>勤続: <strong>${computeTenureText(staffObj.hireDate)}</strong></span>
+  `;
+  card.appendChild(meta);
+
+  const tableWrap = document.createElement("div");
+  tableWrap.className = "table-wrap";
+  const table = document.createElement("table");
+  table.className = "pcard-table";
+
+  const thead = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  headRow.innerHTML = `<th colspan="2" class="item-col-head">評価内容</th>` + PERIODS.map(p=>`<th>${p}</th>`).join("");
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  CATEGORIES.forEach(cat=>{
+    cat.items.forEach((it, idx)=>{
+      const tr = document.createElement("tr");
+      if(idx===0){
+        const catTd = document.createElement("td");
+        catTd.className = "cat-col " + CAT_CLASS[cat.id];
+        catTd.rowSpan = cat.items.length;
+        catTd.textContent = cat.label;
+        tr.appendChild(catTd);
+      }
+      const nameTd = document.createElement("td");
+      nameTd.className = "item-col";
+      nameTd.textContent = it.name;
+      tr.appendChild(nameTd);
+      PERIODS.forEach(p=>{
+        const pd = staffObj.yearData[selectedYear][p];
+        const v = pd.scores[it.name] ?? 0;
+        const cls = scoreClass(v, it.max);
+        const td = document.createElement("td");
+        td.innerHTML = `<span class="pcard-score ${cls}">${v}</span>`;
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+  });
+
+  const summaryRows = [
+    { label:"加点", render: pd => `<strong>${pd.bonus ?? 0}</strong>` },
+    { label:"合計点数", render: pd => `<strong style="color:var(--ember-dark);">${totalScore(pd)}</strong>` },
+    { label:"評価者", render: pd => pd.evaluator || `<span style="color:var(--muted);">-</span>` },
+    { label:"状態", render: pd => pd.confirmed
+        ? `<span class="aff-chip" style="background:var(--green-bg);color:var(--green);">確定</span>`
+        : `<span class="aff-chip" style="background:var(--gray-bg);color:var(--gray-ink);">未確定</span>` },
+  ];
+  summaryRows.forEach(row=>{
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td colspan="2" style="background:var(--cream);font-weight:800;text-align:left;padding-left:12px;">${row.label}</td>` +
+      PERIODS.map(p=>`<td>${row.render(staffObj.yearData[selectedYear][p])}</td>`).join("");
+    tbody.appendChild(tr);
+  });
+
+  table.appendChild(tbody);
+  tableWrap.appendChild(table);
+  card.appendChild(tableWrap);
+
+  const commentWrap = document.createElement("div");
+  commentWrap.style.cssText = "margin-top:18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;";
+  PERIODS.forEach(p=>{
+    const pd = staffObj.yearData[selectedYear][p];
+    const box = document.createElement("div");
+    box.style.cssText = "background:var(--cream);border:1px solid var(--line);border-radius:8px;padding:10px 12px;";
+    box.innerHTML = `<div style="font-size:11.5px;font-weight:800;color:var(--muted);margin-bottom:4px;">${p}のコメント</div><div style="font-size:13px;white-space:pre-wrap;">${pd.comment ? pd.comment.replace(/</g,"&lt;") : '<span style="color:var(--muted);">(なし)</span>'}</div>`;
+    commentWrap.appendChild(box);
+  });
+  card.appendChild(commentWrap);
+
+  wrap.appendChild(card);
+  return wrap;
+}
 function renderStaffAdmin(){
   const wrap = document.createElement("div");
   const h = document.createElement("h2");
