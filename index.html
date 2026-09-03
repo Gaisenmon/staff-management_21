@@ -38,19 +38,44 @@
   .brand{display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap;}
   .brand h1{font-size:18px;margin:0;font-weight:800;letter-spacing:.02em;white-space:nowrap;}
   .brand .tag{font-size:11px;color:#C8BBA8;border:1px solid rgba(255,255,255,.25);border-radius:20px;padding:2px 10px;}
-  @media (max-width:760px){
-    main{padding:16px 14px 60px;}
-    header{padding:16px 16px 0 16px;}
-    .brand{flex-direction:column;align-items:flex-start;gap:10px;}
-    #top-right-slot{width:100%;flex-wrap:wrap;gap:8px !important;align-items:flex-start;}
-    nav{overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch;}
-    nav button{padding:9px 12px;font-size:12.5px;white-space:nowrap;}
-    .title-row{flex-direction:column;align-items:flex-start;}
-    .meta-row{gap:10px 16px;}
-    .item-name{width:110px !important;}
-    h2.title{font-size:17px;}
-    .chart-grid{grid-template-columns:1fr !important;}
+  .mode-toggle{
+    position:absolute;top:14px;right:22px;display:flex;gap:2px;
+    background:rgba(255,255,255,0.08);border-radius:20px;padding:2px;
   }
+  .mode-toggle button{
+    background:transparent;border:none;color:#C8BBA8;padding:4px 12px;
+    font-size:11px;font-weight:700;border-radius:16px;cursor:pointer;font-family:inherit;
+  }
+  .mode-toggle button.active{background:var(--ember);color:#fff;}
+  header{position:relative;}
+  body.mobile-mode .mode-toggle{position:static;margin-bottom:10px;}
+
+  /* ===== スマホ専用モード(PC版のレイアウトとは完全に切り離した見た目) ===== */
+  body.mobile-mode header{padding:14px 14px 0 14px;}
+  body.mobile-mode .brand{flex-direction:column;align-items:flex-start;gap:8px;justify-content:flex-start !important;}
+  body.mobile-mode .brand h1{font-size:16px;}
+  body.mobile-mode #top-right-slot{
+    display:flex !important;flex-direction:row !important;flex-wrap:wrap;
+    align-items:center !important;width:100%;gap:8px;
+  }
+  body.mobile-mode .sync-row{font-size:10px;margin-bottom:8px;}
+  /* タブは折り返さず横スクロールに(前のホール運営システムと同じ方式) */
+  body.mobile-mode nav{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px;}
+  body.mobile-mode nav button{padding:9px 12px;font-size:12.5px;flex:none;}
+  body.mobile-mode main{padding:14px 12px 50px;}
+  body.mobile-mode h2.title{font-size:16px;}
+  body.mobile-mode .card{padding:14px;border-radius:10px;}
+  body.mobile-mode .title-row{flex-direction:column;align-items:stretch;gap:10px;}
+  body.mobile-mode .chart-grid{grid-template-columns:1fr !important;}
+  body.mobile-mode .meta-row{flex-direction:column;gap:6px;}
+  body.mobile-mode .item-name{width:92px !important;font-size:11.5px;}
+  body.mobile-mode .staff-picker{max-width:none;}
+  body.mobile-mode table{font-size:11px;}
+  body.mobile-mode .btn-group button{padding:7px 12px;font-size:12px;}
+  /* iOSは16px未満のinput/selectにフォーカスすると自動ズームしてしまうため、スマホ表示では16pxに統一 */
+  body.mobile-mode select, body.mobile-mode input[type=text], body.mobile-mode input[type=date],
+  body.mobile-mode input[type=number], body.mobile-mode input[type=password], body.mobile-mode textarea{font-size:16px;}
+
   nav{display:flex;gap:4px;flex-wrap:wrap;}
   nav button{background:transparent;border:none;color:#D8CBB8;padding:10px 16px;font-size:13.5px;font-weight:700;cursor:pointer;border-radius:8px 8px 0 0;position:relative;top:1px;font-family:inherit;}
   nav button.active{background:var(--cream);color:var(--ink);}
@@ -164,6 +189,10 @@
 </div>
 <div class="app" id="app" style="display:none;">
   <header>
+    <div class="mode-toggle" id="mode-toggle">
+      <button data-mode="pc">パソコン</button>
+      <button data-mode="mobile">スマホ</button>
+    </div>
     <div class="brand" style="justify-content:space-between;">
       <h1>凱旋門 ATS評価システム</h1>
       <div id="top-right-slot" style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:none;"></div>
@@ -631,6 +660,19 @@ function applyDefaultYearAndPeriod(){
   entrySelectedPeriod = period;
   personalChartPeriod = period;
 }
+
+/* ---------- パソコン/スマホ表示切り替え ---------- */
+let displayMode = (typeof window!=="undefined" && window.matchMedia && window.matchMedia("(max-width:760px)").matches) ? "mobile" : "pc";
+function applyDisplayMode(){
+  document.body.classList.toggle("mobile-mode", displayMode==="mobile");
+  document.querySelectorAll("#mode-toggle button").forEach(b=>{
+    b.classList.toggle("active", b.dataset.mode===displayMode);
+  });
+}
+document.querySelectorAll("#mode-toggle button").forEach(b=>{
+  b.onclick = ()=>{ displayMode = b.dataset.mode; applyDisplayMode(); };
+});
+applyDisplayMode();
 
 function render(){
   renderTabs();
