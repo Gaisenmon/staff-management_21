@@ -1143,6 +1143,13 @@ function storeCategoryAvgPct(year, period, cat){
   const sum = activeStaff.reduce((acc,s)=> acc + categoryPct(s.yearData[year][period].scores, cat), 0);
   return Math.round(sum / activeStaff.length);
 }
+const OPERATION_ITEMS = CATEGORIES.slice(0,3).flatMap(c=>c.items); // ①キッチン②ホール③特殊技能=15項目
+function storeItemAvgPct(year, period, item){
+  const activeStaff = state.staff.filter(s=>s.status==="active" && s.yearData[year]);
+  if(activeStaff.length===0) return 0;
+  const sum = activeStaff.reduce((acc,s)=> acc + ((s.yearData[year][period].scores[item.name] ?? 0) / item.max * 100), 0);
+  return Math.round(sum / activeStaff.length);
+}
 function storeAverageTotal(year, period){
   const activeStaff = state.staff.filter(s=>s.status==="active" && s.yearData[year]);
   if(activeStaff.length===0) return 0;
@@ -1168,13 +1175,13 @@ function buildLineChartSVG(labels, seriesIndividual, seriesAvg, maxVal){
   return `<svg viewBox="0 0 ${width} ${height}" width="100%" style="max-width:520px;display:block;">${grid}${xLabels}${avgPart}${indPart}</svg>`;
 }
 function buildPersonalRadarSVG(labels, individualPct, avgPct){
-  const size=280, center=size/2, radius=size/2-46;
+  const width=460, height=400, center={x:width/2, y:height/2}, radius=130;
   const n = labels.length;
   const angleStep = (2*Math.PI)/n;
   const pointFor = (val,i) => {
     const r = radius*(Math.max(0,Math.min(100,val))/100);
     const angle = -Math.PI/2 + i*angleStep;
-    return [center + r*Math.cos(angle), center + r*Math.sin(angle)];
+    return [center.x + r*Math.cos(angle), center.y + r*Math.sin(angle)];
   };
   const polyStr = pts => pts.map(p=>p.join(",")).join(" ");
   const rings = [20,40,60,80,100].map(level=>{
@@ -1183,22 +1190,22 @@ function buildPersonalRadarSVG(labels, individualPct, avgPct){
   }).join("");
   const axisLines = labels.map((_,i)=>{
     const [x,y] = pointFor(100,i);
-    return `<line x1="${center}" y1="${center}" x2="${x}" y2="${y}" stroke="#E7DFD2" stroke-width="1"/>`;
+    return `<line x1="${center.x}" y1="${center.y}" x2="${x}" y2="${y}" stroke="#E7DFD2" stroke-width="1"/>`;
   }).join("");
   const textLabels = labels.map((lb,i)=>{
     const angle = -Math.PI/2 + i*angleStep;
-    const lx = center + (radius+22)*Math.cos(angle);
-    const ly = center + (radius+22)*Math.sin(angle);
+    const lx = center.x + (radius+20)*Math.cos(angle);
+    const ly = center.y + (radius+20)*Math.sin(angle);
     let anchor = "middle";
-    if(Math.cos(angle) > 0.3) anchor = "start";
-    else if(Math.cos(angle) < -0.3) anchor = "end";
-    return `<text x="${lx}" y="${ly}" font-size="10.5" font-weight="700" fill="#2B2420" text-anchor="${anchor}" dominant-baseline="middle">${lb}</text>`;
+    if(Math.cos(angle) > 0.15) anchor = "start";
+    else if(Math.cos(angle) < -0.15) anchor = "end";
+    return `<text x="${lx}" y="${ly}" font-size="9.5" font-weight="700" fill="#2B2420" text-anchor="${anchor}" dominant-baseline="middle">${lb}</text>`;
   }).join("");
   const avgPts = labels.map((_,i)=> pointFor(avgPct[i],i));
   const indPts = labels.map((_,i)=> pointFor(individualPct[i],i));
   const avgPoly = `<polygon points="${polyStr(avgPts)}" fill="none" stroke="#8A7F72" stroke-width="2" stroke-dasharray="4,3"/>`;
   const indPoly = `<polygon points="${polyStr(indPts)}" fill="#C1531B" fill-opacity="0.22" stroke="#C1531B" stroke-width="2.5"/>`;
-  return `<svg viewBox="0 0 ${size} ${size}" width="100%" style="max-width:300px;display:block;margin:0 auto;">${rings}${axisLines}${avgPoly}${indPoly}${textLabels}</svg>`;
+  return `<svg viewBox="0 0 ${width} ${height}" width="100%" style="max-width:460px;display:block;margin:0 auto;">${rings}${axisLines}${avgPoly}${indPoly}${textLabels}</svg>`;
 }
 
 function renderPersonal(){
@@ -1313,7 +1320,7 @@ function renderPersonal(){
   // 推移グラフ + 店舗平均とのレーダーチャート比較
   const chartCard = document.createElement("div");
   chartCard.className = "card";
-  chartCard.innerHTML = `<div style="font-weight:800;font-size:15px;margin-bottom:4px;">推移とチーム比較</div><div style="font-size:12px;color:var(--muted);margin-bottom:14px;">千葉NT店の在籍スタッフ平均と比較しています。</div>`;
+  chartCard.innerHTML = `<div style="font-weight:800;font-size:15px;margin-bottom:14px;">評価の推移と千葉NT店平均との比較</div>`;
 
   const chartGrid = document.createElement("div");
   chartGrid.className = "chart-grid";
@@ -1328,18 +1335,23 @@ function renderPersonal(){
   const indTotals = PERIODS.map(p => totalScore(staffObj.yearData[selectedYear][p]));
   const avgTotals = PERIODS.map(p => storeAverageTotal(selectedYear, p));
   const lineMax = Math.max(5, Math.ceil(Math.max(...indTotals, ...avgTotals, 5) / 5) * 5);
-  lineBox.innerHTML += buildLineChartSVG(PERIODS, indTotals, avgTotals, lineMax);
+  const lineSvgWrap = document.createElement("div");
+  lineSvgWrap.innerHTML = buildLineChartSVG(PERIODS, indTotals, avgTotals, lineMax);
+  lineBox.appendChild(lineSvgWrap);
   chartGrid.appendChild(lineBox);
 
-  // 右:カテゴリ別レーダーチャート(期間を選んで比較)
+  // 右:オペレーション15項目(①キッチン②ホール③特殊技能)のレーダーチャート
   const radarBox = document.createElement("div");
   const radarPeriodRow = renderPeriodButtons(personalChartPeriod, (p)=>{ personalChartPeriod = p; render(); });
   radarPeriodRow.style.marginBottom = "6px";
   radarBox.appendChild(radarPeriodRow);
-  const catLabels = CATEGORIES.map(c=>c.label);
-  const indPct = CATEGORIES.map(c=> categoryPct(staffObj.yearData[selectedYear][personalChartPeriod].scores, c));
-  const avgPct = CATEGORIES.map(c=> storeCategoryAvgPct(selectedYear, personalChartPeriod, c));
-  radarBox.innerHTML += buildPersonalRadarSVG(catLabels, indPct, avgPct);
+  const itemLabels = OPERATION_ITEMS.map(it=>it.name);
+  const periodScores = staffObj.yearData[selectedYear][personalChartPeriod].scores;
+  const indPct = OPERATION_ITEMS.map(it=> Math.round((periodScores[it.name] ?? 0) / it.max * 100));
+  const avgPct = OPERATION_ITEMS.map(it=> storeItemAvgPct(selectedYear, personalChartPeriod, it));
+  const radarSvgWrap = document.createElement("div");
+  radarSvgWrap.innerHTML = buildPersonalRadarSVG(itemLabels, indPct, avgPct);
+  radarBox.appendChild(radarSvgWrap);
   const radarLegend = document.createElement("div");
   radarLegend.style.cssText = "display:flex;gap:16px;justify-content:center;margin-top:4px;font-size:11.5px;color:var(--muted);flex-wrap:wrap;";
   radarLegend.innerHTML = `
