@@ -159,7 +159,7 @@
 <script type="module">
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
-import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword, updatePassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 /* ==============================================================
    会社用(赤門)本番接続。akamo-staff-management プロジェクトに接続。
@@ -372,6 +372,29 @@ function renderUserPicker(){
   lbl.style.whiteSpace = "nowrap";
   lbl.textContent = currentPersonName ? `ログイン中: ${currentPersonName}さん` : "ログイン中: (照合不可)";
   box.appendChild(lbl);
+  const pwBtn = document.createElement("button");
+  pwBtn.className = "logout-btn";
+  pwBtn.textContent = "パスワード変更";
+  pwBtn.onclick = ()=>{
+    showInputModal(
+      "新しいパスワードを入力してください(6文字以上)。",
+      async (newPassword, close)=>{
+        if(!newPassword || newPassword.length < 6){ throw new Error("パスワードは6文字以上にしてください。"); }
+        try{
+          await updatePassword(auth.currentUser, newPassword);
+        }catch(e){
+          if(e.code === "auth/requires-recent-login"){
+            throw new Error("セキュリティのため、変更には再ログインが必要です。一度ログアウトしてログインし直してから、もう一度お試しください。");
+          }
+          throw new Error("変更に失敗しました:" + (e.message||""));
+        }
+        close();
+        showToast("パスワードを変更しました");
+      },
+      {inputType:"password", placeholder:"新しいパスワード", confirmLabel:"変更する"}
+    );
+  };
+  box.appendChild(pwBtn);
   const logoutBtn = document.createElement("button");
   logoutBtn.className = "logout-btn";
   logoutBtn.textContent = "ログアウト";
@@ -1166,6 +1189,24 @@ function renderStaffAdmin(){
       );
     };
     actionGroup.appendChild(loginBtn);
+    if(!st.hasLogin){
+      const markBtn = document.createElement("button");
+      markBtn.textContent = "設定済みにする";
+      markBtn.title = "以前から実際にはログインアカウントがある場合、この記録だけを直します";
+      markBtn.style.cssText = "background:#fff;border:1px solid var(--line);color:var(--muted);border-radius:20px;padding:5px 14px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;";
+      markBtn.onclick = ()=>{
+        showModal(
+          `${st.name}さんは、以前から実際にはログインアカウントを作成済みですか?\nこの操作はアプリ側の表示だけを直すもので、新しくアカウントを作るわけではありません。`,
+          ()=>{
+            st.hasLogin = true;
+            saveState();
+            render();
+          },
+          {confirmLabel:"設定済みにする"}
+        );
+      };
+      actionGroup.appendChild(markBtn);
+    }
     actionTd.appendChild(actionGroup);
     tr.appendChild(actionTd);
     tbody.appendChild(tr);
