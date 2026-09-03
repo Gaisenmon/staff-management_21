@@ -62,11 +62,12 @@
   .table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;}
   table{border-collapse:collapse;width:100%;font-size:11.5px;}
   thead th{background:var(--charcoal);color:#EFE5D6;padding:7px 6px;text-align:center;font-weight:700;white-space:nowrap;}
-  thead th.name-col{text-align:left;padding-left:12px;}
+  thead th.name-col{text-align:left;padding-left:12px;position:sticky;left:0;z-index:3;background:var(--charcoal);}
   thead tr.cat-row th{font-size:10.5px;background:var(--charcoal-2);border-left:2px solid var(--charcoal);}
   tbody td{padding:6px;text-align:center;border-bottom:1px solid var(--line);white-space:nowrap;}
-  tbody td.name-col{text-align:left;padding-left:12px;font-weight:700;}
+  tbody td.name-col{text-align:left;padding-left:12px;font-weight:700;position:sticky;left:0;z-index:1;background:var(--card);box-shadow:2px 0 4px rgba(0,0,0,0.06);}
   tbody tr:hover{background:#FAF5EC;}
+  tbody tr:hover td.name-col{background:#FAF5EC;}
   .aff-chip{display:inline-block;font-size:10px;font-weight:800;padding:1px 8px;border-radius:20px;background:var(--gray-bg);color:var(--muted);}
   .aff-chip.hall{background:#E4EEF1;color:#2F6B7A;}
   .aff-chip.kitchen{background:#F5E7DA;color:var(--ember-dark);}
@@ -629,6 +630,25 @@ function render(){
 /* ---------- ATS評価ダッシュボード ---------- */
 const sortState = { col:"code", dir:"asc" };
 let dashboardShowInactive = false;
+/* ---------- CSVエクスポート共通ヘルパー ---------- */
+function csvEscape(v){
+  const s = String(v ?? "");
+  if(/[",\n]/.test(s)) return `"${s.replace(/"/g,'""')}"`;
+  return s;
+}
+function downloadCSV(filename, rows){
+  const csv = rows.map(row => row.map(csvEscape).join(",")).join("\r\n");
+  const blob = new Blob(["\uFEFF" + csv], {type:"text/csv;charset=utf-8;"}); // BOM付きでExcelの文字化けを防ぐ
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(()=> URL.revokeObjectURL(url), 1000);
+}
+
 function affiliationMatches(aff, filter){
   if(filter==="all") return true;
   if(filter==="hall") return aff==="ホール" || aff==="両方";
@@ -755,6 +775,24 @@ function renderDashboard(){
     else { cmp = va - vb; }
     return s.dir==="asc" ? cmp : -cmp;
   });
+
+  const exportBtn = document.createElement("button");
+  exportBtn.textContent = "CSVエクスポート";
+  exportBtn.style.cssText = "background:#fff;border:1px solid var(--ember);color:var(--ember-dark);border-radius:20px;padding:6px 16px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;";
+  exportBtn.onclick = ()=>{
+    const header = ["社員CD","氏名","雇用区分","所属","勤続","評価者", ...ALL_ITEMS.map(it=>it.name), "加点","合計点数"];
+    const rows = [header];
+    sorted.forEach(st=>{
+      const period = st.yearData[selectedYear][dashboardPeriod];
+      rows.push([
+        st.code, st.name, st.employType, st.affiliation, computeTenureText(st.hireDate), period.evaluator || "",
+        ...ALL_ITEMS.map(it => period.scores[it.name] ?? 0),
+        period.bonus ?? 0, totalScore(period),
+      ]);
+    });
+    downloadCSV(`ATS評価_${selectedYear}年度_${dashboardPeriod}.csv`, rows);
+  };
+  titleRow.appendChild(exportBtn);
 
   const tbody = document.createElement("tbody");
   const affClass = (aff)=> aff==="ホール" ? "hall" : aff==="キッチン" ? "kitchen" : "both";
