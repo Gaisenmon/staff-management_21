@@ -225,8 +225,17 @@ const firebaseConfig = {
 };
 const fbApp = initializeApp(firebaseConfig);
 const db = getDatabase(fbApp);
-const STORE_ID = "gaisenmon";
-const stateRef = ref(db, `stores/${STORE_ID}/ats/state`); // ホール運営システムの stores/gaisenmon/state とは別パス
+/* ==============================================================
+   店舗展開用の設定値。新しい店舗にこのファイルをコピーする時は、
+   DEFAULT_STORE_ID をその店舗のIDに変更するだけでよい(他の行は触らない)。
+   ここを変え忘れると、他店舗のデータと同じ場所に保存されてしまい、
+   データが混ざる重大な事故につながるので、必ず店舗ごとに固有の値にすること。
+   (?store=xxx というURLパラメータでも一時的に上書きできる。動作確認用)
+   ============================================================== */
+const DEFAULT_STORE_ID = "gaisenmon"; // ← 千葉NT店。他店舗にコピーする時はここだけ変更する
+const STORE_ID = new URLSearchParams(window.location.search).get("store") || DEFAULT_STORE_ID;
+const stateRef = ref(db, `stores/${STORE_ID}/ats/state`); // ホール運営システムの stores/${STORE_ID}/state とは別パス
+const historyRef = ref(db, `stores/${STORE_ID}/ats/history`); // 変更履歴は増減が激しいので本体とは別パスに分離
 const auth = getAuth(fbApp);
 const LOGIN_DOMAIN = "gaisenmon.local";
 function codeToEmail(code){ return `${code.trim()}@${LOGIN_DOMAIN}`; }
@@ -361,11 +370,13 @@ function seedStaff(){
 /* ============================== 状態管理・共有保存(Firebase Realtime Databaseでリアルタイム共有) ============================== */
 let state = null;
 let editingForm = false;
+let stateLoaded = false;
+let historyLoaded = false;
 let firstLoadDone = false;
 
-function migrateState(s){
+/* 本体(staff/years)側の移行処理。履歴は別パスになったのでここでは扱わない。 */
+function migrateCoreState(s){
   if(!Array.isArray(s.staff)) s.staff = [];
-  if(!Array.isArray(s.history)) s.history = [];
   if(!s.years || s.years.length===0) s.years = [INITIAL_YEAR];
   s.staff.forEach(st=>{
     if(!st.status){ st.status = st.active===false ? "resigned" : "active"; }
@@ -374,18 +385,19 @@ function migrateState(s){
   });
   return s;
 }
-function defaultState(){ return { staff: seedStaff(), years: [INITIAL_YEAR], history: [], updatedAt: null }; }
+function defaultCoreState(){ return { staff: seedStaff(), years: [INITIAL_YEAR], updatedAt: null }; }
+
 /* 直近にサーバーから受け取った状態(=自分がまだ書き込んでいない基準点)。
    これと今の手元の state を比べることで「自分が実際に何を触ったか」を判定する。 */
-let lastServerState = null;
+let lastServerCore = null;   // {staff, years} の基準点
+let lastServerHistory = null; // history配列の基準点
 
-/* 保存直前にサーバーの最新データを取り直し、自分が実際に触った部分(スタッフ・年度・履歴)だけを
+/* 保存直前にサーバーの最新データを取り直し、自分が実際に触った部分(スタッフ・年度)だけを
    その最新データに重ねてから書き込む。
    理由:「編集中は他人の更新を取り込まない」ガードのせいで、長時間編集している間に
    他の人が保存した内容を、自分の保存時にまるごと上書きして消してしまう事故があったため。 */
 function mergeStateForSave(latest, local, base){
   const merged = {...latest};
-
   const baseStaffMap = new Map((base?.staff||[]).map(s=>[s.id, s]));
   const localStaffMap = new Map((local.staff||[]).map(s=>[s.id, s]));
   const mergedStaffMap = new Map((latest.staff||[]).map(s=>[s.id, s])); // 基本は最新データを採用
@@ -397,35 +409,61 @@ function mergeStateForSave(latest, local, base){
     }
   });
   merged.staff = Array.from(mergedStaffMap.values());
-
   // 年度は増える一方の情報なので、両方を合わせる
   merged.years = Array.from(new Set([...(latest.years||[]), ...(local.years||[])])).sort();
-
-  // 変更履歴:自分が追加/削除して基準点から変わっていれば自分の内容を優先、そうでなければ最新を採用
-  const historyChanged = JSON.stringify(base?.history||[]) !== JSON.stringify(local.history||[]);
-  merged.history = historyChanged ? (local.history||[]) : (latest.history||[]);
-
+  return merged;
+}
+/* 変更履歴は「追加」と「削除」だけのログなので、id単位の3-wayマージで正しく合成できる。
+   自分が追加した分は足す、自分が削除した分は(他人がまだ持っていても)消す、
+   それ以外(他人が追加/削除した分)は最新データをそのまま尊重する。 */
+function mergeHistoryForSave(latest, local, base){
+  const baseIds = new Set((base||[]).map(h=>h.id));
+  const localIds = new Set((local||[]).map(h=>h.id));
+  const addedLocally = (local||[]).filter(h=>!baseIds.has(h.id));
+  const deletedLocally = new Set((base||[]).filter(h=>!localIds.has(h.id)).map(h=>h.id));
+  const merged = (latest||[]).filter(h=>!deletedLocally.has(h.id));
+  const mergedIds = new Set(merged.map(h=>h.id));
+  addedLocally.forEach(h=>{ if(!mergedIds.has(h.id)){ merged.push(h); mergedIds.add(h.id); } });
+  merged.sort((a,b)=> (b.ts||"").localeCompare(a.ts||"")); // 新しい順
   return merged;
 }
 async function saveState(){
+  // ---- 本体(staff/years) ----
   try{
     const snap = await get(stateRef);
     const latestRaw = snap.val();
     if(latestRaw){
-      state = mergeStateForSave(migrateState(latestRaw), state, lastServerState);
+      const merged = mergeStateForSave(migrateCoreState(latestRaw), {staff:state.staff, years:state.years}, lastServerCore);
+      state.staff = merged.staff;
+      state.years = merged.years;
     }
   }catch(e){
     console.error("保存前の再取得に失敗。手元のデータでそのまま保存します", e);
   }
   state.updatedAt = new Date().toISOString();
   try{
-    await set(stateRef, state);
-    lastServerState = JSON.parse(JSON.stringify(state));
-    showToast("保存しました(全員に共有されます)");
+    await set(stateRef, { staff: state.staff, years: state.years, updatedAt: state.updatedAt });
+    lastServerCore = JSON.parse(JSON.stringify({staff: state.staff, years: state.years}));
   }catch(e){
     console.error("save failed", e);
     showToast("保存に失敗しました");
+    return;
   }
+
+  // ---- 変更履歴(別パス。頻繁に増減するので本体と分けて保存している) ----
+  const historyChangedLocally = JSON.stringify(lastServerHistory||[]) !== JSON.stringify(state.history||[]);
+  if(historyChangedLocally){
+    try{
+      const histSnap = await get(historyRef);
+      const latestHistory = Array.isArray(histSnap.val()) ? histSnap.val() : [];
+      state.history = mergeHistoryForSave(latestHistory, state.history, lastServerHistory);
+      await set(historyRef, state.history);
+      lastServerHistory = JSON.parse(JSON.stringify(state.history));
+    }catch(e){
+      console.error("history save failed", e);
+    }
+  }
+  showToast("保存しました(全員に共有されます)");
 }
 function showToast(msg){
   const t = document.getElementById("toast");
@@ -439,7 +477,7 @@ function setSyncStatus(ok){
   const lbl = document.getElementById("sync-label");
   dot.classList.toggle("off", !ok);
   const t = state?.updatedAt ? new Date(state.updatedAt).toLocaleString("ja-JP",{hour:"2-digit",minute:"2-digit",month:"numeric",day:"numeric"}) : "-";
-  lbl.textContent = ok ? `全員と同期中(リアルタイム) ・ 最終更新 ${t}` : "オフライン";
+  lbl.textContent = (ok ? `全員と同期中(リアルタイム) ・ 最終更新 ${t}` : "オフライン") + ` ・ 店舗: ${STORE_ID}`;
 }
 
 /* ---- ログインコードから「今ログインしているのが誰か」を自動判定する ---- */
@@ -1077,7 +1115,7 @@ function renderEntry(){
   evaluatorBox.innerHTML = `<label>評価者(${entrySelectedPeriod}分)</label>`;
   const evaluatorSelect = document.createElement("select");
   evaluatorSelect.disabled = locked;
-  const evaluatorNames = state.staff.filter(s=>s.isEvaluator).map(s=>s.name);
+  const evaluatorNames = state.staff.filter(s=>s.isEvaluator && s.id!==staffObj.id).map(s=>s.name); // 対象者本人は自己評価防止のため除外
   evaluatorSelect.innerHTML = `<option value="">未選択</option>` + evaluatorNames.map(name=>`<option value="${name}" ${periodData.evaluator===name?"selected":""}>${name}</option>`).join("");
   evaluatorSelect.onchange = ()=>{ editingForm = true; periodData.evaluator = evaluatorSelect.value; };
   evaluatorBox.appendChild(evaluatorSelect);
@@ -1852,6 +1890,21 @@ function renderHistory(){
 
 /* ============================== 起動(ログイン後にリアルタイム購読を開始) ============================== */
 let appStarted = false;
+/* 変更履歴を本体から独立させる前の旧データには、state側に history が同居している可能性がある。
+   新しい保存先(historyRef)がまだ空で、旧データ側に履歴が残っている場合だけ、一度だけ移す。 */
+async function migrateLegacyHistoryIfNeeded(){
+  try{
+    const [stateSnap, histSnap] = await Promise.all([get(stateRef), get(historyRef)]);
+    const legacyHistory = stateSnap.val()?.history;
+    const currentHistory = histSnap.val();
+    if(Array.isArray(legacyHistory) && legacyHistory.length>0 && (!Array.isArray(currentHistory) || currentHistory.length===0)){
+      await set(historyRef, legacyHistory);
+    }
+  }catch(e){
+    console.error("履歴の移行チェックに失敗", e);
+  }
+}
+
 function startApp(){
   if(appStarted) return;
   appStarted = true;
@@ -1874,16 +1927,26 @@ function startApp(){
     setSyncStatus(snap.val() === true);
   });
 
-  // データ本体をリアルタイム購読。誰かが保存すると全員の画面に自動反映される
+  state = { staff: [], years: [INITIAL_YEAR], history: [], updatedAt: null };
+  function tryFirstRender(){
+    if(stateLoaded && historyLoaded && !firstLoadDone){
+      firstLoadDone = true;
+      currentPersonName = resolveCurrentPersonName();
+      render();
+    }
+  }
+
+  // データ本体(staff/years)をリアルタイム購読。誰かが保存すると全員の画面に自動反映される
   onValue(stateRef, async (snapshot)=>{
     const val = snapshot.val();
     if(val === null){
-      if(!firstLoadDone){
-        state = defaultState();
-        lastServerState = JSON.parse(JSON.stringify(state));
-        firstLoadDone = true;
-        currentPersonName = resolveCurrentPersonName();
-        render();
+      if(!stateLoaded){
+        const seed = defaultCoreState();
+        state.staff = seed.staff;
+        state.years = seed.years;
+        lastServerCore = JSON.parse(JSON.stringify({staff:state.staff, years:state.years}));
+        stateLoaded = true;
+        tryFirstRender();
         saveState();
       }
       return;
@@ -1891,11 +1954,37 @@ function startApp(){
     if(editingForm && firstLoadDone){
       return; // 編集中は他人の更新の取り込みを見送る(自分の未保存の変更を守る)
     }
-    state = migrateState(val);
-    lastServerState = JSON.parse(JSON.stringify(state)); // 保存時の差分判定の基準点を更新
+    const migrated = migrateCoreState(val);
+    state.staff = migrated.staff;
+    state.years = migrated.years;
+    state.updatedAt = migrated.updatedAt;
+    lastServerCore = JSON.parse(JSON.stringify({staff: state.staff, years: state.years})); // 保存時の差分判定の基準点を更新
+    stateLoaded = true;
     currentPersonName = resolveCurrentPersonName();
-    firstLoadDone = true;
-    render();
+    if(firstLoadDone) render(); else tryFirstRender();
+  });
+
+  // 変更履歴を別パスでリアルタイム購読(本体とは独立して増減する)
+  migrateLegacyHistoryIfNeeded().then(()=>{
+    onValue(historyRef, (snapshot)=>{
+      const val = snapshot.val();
+      if(val === null){
+        if(!historyLoaded){
+          state.history = [];
+          lastServerHistory = [];
+          historyLoaded = true;
+          tryFirstRender();
+        }
+        return;
+      }
+      if(editingForm && firstLoadDone){
+        return;
+      }
+      state.history = Array.isArray(val) ? val : [];
+      lastServerHistory = JSON.parse(JSON.stringify(state.history));
+      historyLoaded = true;
+      if(firstLoadDone) render(); else tryFirstRender();
+    });
   });
 }
 
