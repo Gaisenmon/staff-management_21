@@ -209,7 +209,7 @@ function scoreClass(value, max){
   if(value >= 1) return "mid";
   return "low";
 }
-const EVALUATORS = ["青木","井上","熊本","寺澤","木内","篠原","和田"];
+const EVALUATOR_SEED_NAMES = ["青木","井上","熊本","寺澤","木内","篠原","和田"]; // 移行専用(既存データのisEvaluator初期値判定に使用)
 function starCount(scores){
   return ALL_ITEMS.filter(it => scoreClass(scores[it.name] ?? 0, it.max) === "ready").length;
 }
@@ -302,7 +302,10 @@ function computeTenureText(hireDateStr){
 }
 const INITIAL_YEAR = "2026";
 function seedStaff(){
-  return STAFF_SEED.map(s => ({...s, status:"active", yearData: { [INITIAL_YEAR]: emptyPeriods() }}));
+  return STAFF_SEED.map(s => ({
+    ...s, status:"active", isEvaluator: EVALUATOR_SEED_NAMES.includes(s.name), hasLogin:false,
+    yearData: { [INITIAL_YEAR]: emptyPeriods() },
+  }));
 }
 
 /* ============================== 状態管理・共有保存(Firebase Realtime Databaseでリアルタイム共有) ============================== */
@@ -316,6 +319,8 @@ function migrateState(s){
   if(!s.years || s.years.length===0) s.years = [INITIAL_YEAR];
   s.staff.forEach(st=>{
     if(!st.status){ st.status = st.active===false ? "resigned" : "active"; }
+    if(st.isEvaluator === undefined){ st.isEvaluator = EVALUATOR_SEED_NAMES.includes(st.name); }
+    if(st.hasLogin === undefined){ st.hasLogin = false; }
   });
   return s;
 }
@@ -520,13 +525,13 @@ function diffAndLog(staffObj, year, period, before, after){
 const TABS = [
   {id:"dashboard",  label:"ATS評価ダッシュボード"},
   {id:"entry",      label:"ATS評価入力"},
-  {id:"staffAdmin", label:"スタッフ管理"},
+  {id:"staffAdmin", label:"スタッフマスタ"},
   {id:"guideline",  label:"評価ガイドライン"},
   {id:"history",    label:"変更履歴"},
 ];
 let activeTab = "dashboard";
 let dashboardFilter = "all";      // all | hall | kitchen
-let dashboardPeriod = PERIODS[0]; // 4月 | 7月 | 10月 | 1月
+let dashboardPeriod = null;       // 4月 | 7月 | 10月 | 1月 (初回ロード時に「直近で経過した時期」を自動設定)
 
 function renderTabs(){
   const nav = document.getElementById("tabs");
@@ -558,9 +563,33 @@ function renderPeriodButtons(selected, onSelect){
   row.appendChild(group);
   return row;
 }
+/* 「4月・7月・10月・1月」のうち、今日時点で直近に経過している時期と、
+   それが属する年度をあわせて判定する。1〜3月は前年度の1月分として扱う。
+   (例:2026年9月なら → 2026年度・7月。2027年2月なら → 2026年度・1月) */
+function computeCurrentPeriodDefault(){
+  const now = new Date();
+  const month = now.getMonth() + 1; // 1-12
+  const calYear = now.getFullYear();
+  let period, fiscalYear;
+  if(month>=4 && month<=6){ period="4月"; fiscalYear=calYear; }
+  else if(month>=7 && month<=9){ period="7月"; fiscalYear=calYear; }
+  else if(month>=10 && month<=12){ period="10月"; fiscalYear=calYear; }
+  else { period="1月"; fiscalYear=calYear-1; }
+  return { period, fiscalYear: String(fiscalYear) };
+}
+let defaultsApplied = false;
+function applyDefaultYearAndPeriod(){
+  if(defaultsApplied) return;
+  defaultsApplied = true;
+  const { period, fiscalYear } = computeCurrentPeriodDefault();
+  selectedYear = state.years.includes(fiscalYear) ? fiscalYear : state.years[state.years.length-1];
+  dashboardPeriod = period;
+  entrySelectedPeriod = period;
+}
+
 function render(){
   renderTabs();
-  if(!selectedYear) selectedYear = state.years[state.years.length-1];
+  applyDefaultYearAndPeriod();
   const topSlot = document.getElementById("top-right-slot");
   topSlot.innerHTML = "";
   topSlot.appendChild(renderYearPicker());
@@ -584,6 +613,10 @@ function affiliationMatches(aff, filter){
   return true;
 }
 function renderDashboard(){
+  // 選択中の年度のデータを持たないスタッフがいた場合の保険(通常は発生しない想定だが、
+  // 万一データが欠けていた場合にクラッシュせず自動補完する)
+  state.staff.forEach(st=>{ if(!st.yearData[selectedYear]) st.yearData[selectedYear] = emptyPeriods(); });
+
   const wrap = document.createElement("div");
   const titleRow = document.createElement("div");
   titleRow.className = "title-row";
@@ -774,7 +807,7 @@ function renderDashboard(){
 /* ---------- ATS評価入力(紙の評価票と同じ表レイアウト・4期間分の履歴を保持) ---------- */
 let entrySelectedId = null;
 let entryShowInactive = false;
-let entrySelectedPeriod = PERIODS[0];
+let entrySelectedPeriod = null; // 初回ロード時に自動設定
 const CAT_CLASS = {kitchen:"cat-kitchen", hall:"cat-hall", special:"cat-special", shift:"cat-shift", attitude:"cat-attitude"};
 const editSnapshots = {}; // key: `${staffId}:${period}` -> 直近保存時点のperiodDataのコピー(履歴の差分計算用)
 function snapKey(staffId, period){ return `${staffId}:${period}`; }
@@ -873,7 +906,8 @@ function renderEntry(){
   evaluatorBox.innerHTML = `<label>評価者(${entrySelectedPeriod}分)</label>`;
   const evaluatorSelect = document.createElement("select");
   evaluatorSelect.disabled = locked;
-  evaluatorSelect.innerHTML = `<option value="">未選択</option>` + EVALUATORS.map(name=>`<option value="${name}" ${periodData.evaluator===name?"selected":""}>${name}</option>`).join("");
+  const evaluatorNames = state.staff.filter(s=>s.isEvaluator).map(s=>s.name);
+  evaluatorSelect.innerHTML = `<option value="">未選択</option>` + evaluatorNames.map(name=>`<option value="${name}" ${periodData.evaluator===name?"selected":""}>${name}</option>`).join("");
   evaluatorSelect.onchange = ()=>{ editingForm = true; periodData.evaluator = evaluatorSelect.value; };
   evaluatorBox.appendChild(evaluatorSelect);
   evaluatorRow.appendChild(evaluatorBox);
@@ -1016,7 +1050,7 @@ function renderStaffAdmin(){
   const wrap = document.createElement("div");
   const h = document.createElement("h2");
   h.className = "title";
-  h.textContent = "スタッフ管理";
+  h.textContent = "スタッフマスタ";
   wrap.appendChild(h);
 
   // 新規追加フォーム
@@ -1044,6 +1078,7 @@ function renderStaffAdmin(){
     const affiliation = document.getElementById("sa-aff").value;
     const hireDate = document.getElementById("sa-hire").value || null;
     if(!name || !code){ showToast("氏名と社員CDは必須です"); return; }
+    if(state.staff.some(s=>String(s.code)===String(code))){ showToast(`社員CD ${code} は既に登録されています`); return; }
     const yearData = {};
     state.years.forEach(y => { yearData[y] = emptyPeriods(); });
     state.staff.push({
@@ -1067,18 +1102,21 @@ function renderStaffAdmin(){
   const tableWrap = document.createElement("div");
   tableWrap.className = "table-wrap";
   const table = document.createElement("table");
-  table.innerHTML = `<thead><tr><th>社員CD</th><th class="name-col">氏名</th><th>雇用区分</th><th>所属</th><th>入社日</th><th>状態</th><th style="text-align:right;">操作</th></tr></thead>`;
+  table.innerHTML = `<thead><tr><th>社員CD</th><th class="name-col">氏名</th><th>雇用区分</th><th>所属</th><th>入社日</th><th>状態</th><th>ログイン</th><th style="text-align:right;">操作</th></tr></thead>`;
   const tbody = document.createElement("tbody");
   [...state.staff].sort((a,b)=> Number(a.code)-Number(b.code)).forEach(st=>{
     const tr = document.createElement("tr");
     const meta = STATUS_META[st.status] || STATUS_META.active;
     tr.innerHTML = `
       <td>${st.code}</td>
-      <td class="name-col">${st.name}</td>
+      <td class="name-col" style="${st.hasLogin ? "" : "color:var(--muted);"}">${st.name}</td>
       <td>${st.employType}</td>
       <td>${st.affiliation}</td>
       <td style="color:var(--muted);font-size:11px;">${st.hireDate ?? "-"}</td>
       <td><span class="aff-chip" style="${meta.style}">${meta.label}</span></td>
+      <td>${st.hasLogin
+        ? `<span class="aff-chip" style="background:var(--green-bg);color:var(--green);">設定済み</span>`
+        : `<span class="aff-chip" style="background:var(--gray-bg);color:var(--gray-ink);">未設定</span>`}</td>
     `;
     const actionTd = document.createElement("td");
     actionTd.style.textAlign = "right";
@@ -1106,11 +1144,11 @@ function renderStaffAdmin(){
       actionGroup.appendChild(btn);
     });
     const loginBtn = document.createElement("button");
-    loginBtn.textContent = "ログイン設定";
+    loginBtn.textContent = st.hasLogin ? "ログイン再設定" : "ログイン設定";
     loginBtn.style.cssText = "background:#fff;border:1px solid var(--line);color:var(--muted);border-radius:20px;padding:5px 14px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;";
     loginBtn.onclick = ()=>{
       showInputModal(
-        `${st.name}さん(社員CD: ${st.code})のログインパスワードを設定します。\n6文字以上で入力してください。`,
+        `${st.name}さん(社員CD: ${st.code})のログインパスワードを設定します。\n6文字以上で入力してください。${st.hasLogin ? "\n※既に設定済みのようです。パスワードの再設定(リセット)は現在の仕組みではできません。" : ""}`,
         async (password, close)=>{
           if(!password || password.length < 6){ throw new Error("パスワードは6文字以上にしてください(Firebaseの制限です)。"); }
           try{
@@ -1118,8 +1156,11 @@ function renderStaffAdmin(){
           }catch(e){
             throw new Error(e.code==="auth/email-already-in-use" ? "このスタッフのログインは既に設定済みです。" : ("作成に失敗しました:" + (e.message||"")));
           }
+          st.hasLogin = true;
+          await saveState();
           close();
           showToast(`${st.name}さんのログインを設定しました`);
+          render();
         },
         {inputType:"password", placeholder:"新しいパスワード", confirmLabel:"設定する"}
       );
@@ -1133,6 +1174,60 @@ function renderStaffAdmin(){
   tableWrap.appendChild(table);
   listCard.appendChild(tableWrap);
   wrap.appendChild(listCard);
+
+  // 評価者一覧
+  const evalCard = document.createElement("div");
+  evalCard.className = "card";
+  evalCard.innerHTML = `<div style="font-weight:800;font-size:15px;margin-bottom:4px;">評価者一覧</div><div style="font-size:12px;color:var(--muted);margin-bottom:14px;">ここで選ばれた人が、ATS評価入力画面の「評価者」プルダウンに表示されます。</div>`;
+  const currentEvaluators = state.staff.filter(s=>s.isEvaluator);
+  const chipsWrap = document.createElement("div");
+  chipsWrap.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;";
+  if(currentEvaluators.length===0){
+    const empty = document.createElement("div");
+    empty.style.cssText = "color:var(--muted);font-size:13px;";
+    empty.textContent = "評価者が1人も選ばれていません。下のプルダウンから追加してください。";
+    chipsWrap.appendChild(empty);
+  }
+  currentEvaluators.forEach(st=>{
+    const chip = document.createElement("span");
+    chip.style.cssText = "display:inline-flex;align-items:center;gap:6px;background:var(--amber-bg);color:var(--amber);border-radius:20px;padding:5px 8px 5px 14px;font-size:12.5px;font-weight:700;";
+    chip.textContent = st.name;
+    const removeBtn = document.createElement("button");
+    removeBtn.textContent = "✕";
+    removeBtn.style.cssText = "background:none;border:none;color:inherit;cursor:pointer;font-size:12px;padding:2px 4px;font-family:inherit;";
+    removeBtn.onclick = ()=>{
+      st.isEvaluator = false;
+      saveState();
+      render();
+    };
+    chip.appendChild(removeBtn);
+    chipsWrap.appendChild(chip);
+  });
+  evalCard.appendChild(chipsWrap);
+
+  const addRow = document.createElement("div");
+  addRow.style.cssText = "display:flex;gap:10px;align-items:center;";
+  const addSelect = document.createElement("select");
+  addSelect.style.maxWidth = "260px";
+  const candidates = state.staff.filter(s=>!s.isEvaluator && s.status==="active");
+  addSelect.innerHTML = candidates.length
+    ? candidates.map(s=>`<option value="${s.id}">${s.name}</option>`).join("")
+    : `<option value="">(追加できる在籍スタッフがいません)</option>`;
+  addRow.appendChild(addSelect);
+  const addEvalBtn = document.createElement("button");
+  addEvalBtn.className = "ghost small";
+  addEvalBtn.textContent = "評価者に追加";
+  addEvalBtn.style.cssText = "background:transparent;color:var(--ember-dark);border:1px solid var(--ember);border-radius:8px;padding:8px 16px;font-weight:700;font-size:12.5px;cursor:pointer;font-family:inherit;";
+  addEvalBtn.onclick = ()=>{
+    const target = state.staff.find(s=>s.id===addSelect.value);
+    if(!target) return;
+    target.isEvaluator = true;
+    saveState();
+    render();
+  };
+  addRow.appendChild(addEvalBtn);
+  evalCard.appendChild(addRow);
+  wrap.appendChild(evalCard);
 
   return wrap;
 }
@@ -1332,18 +1427,14 @@ function startApp(){
 
   // フォーム内の入力欄にフォーカスがある間は「編集中」とみなし、
   // 他の人の保存によるリアルタイム再描画で入力中の内容を消さないようにする。
-  // (スコアの丸ボタンはbutton要素なので、こちらは補助的なガード。主にコメント欄・評価者セレクト向け)
+  // 解除は行わず(true にするだけ)、実際に解除するのは保存・確定・タブ切り替えなど
+  // 各操作ハンドラ側の editingForm=false に任せる。
+  // 理由: 点数ボタン(button要素)を押すと画面全体を再描画するため、フォーカスが外れて
+  // focusout が発火してしまい、ここで自動的にfalseへ戻すと「編集中」判定が
+  // ボタンを押すたびに解除されてしまう(=同時編集ガードが機能しなくなる)バグがあった。
   const mainEl = document.getElementById("main");
   mainEl.addEventListener("focusin", (e)=>{
     if(["INPUT","SELECT","TEXTAREA"].includes(e.target.tagName)) editingForm = true;
-  });
-  mainEl.addEventListener("focusout", ()=>{
-    setTimeout(()=>{
-      const a = document.activeElement;
-      if(!a || !["INPUT","SELECT","TEXTAREA"].includes(a.tagName) || !mainEl.contains(a)){
-        editingForm = false;
-      }
-    }, 80);
   });
 
   // Firebaseの接続状態そのものを監視
