@@ -21,8 +21,8 @@
     --amber-bg:#FBF0DC;
     --gray-bg:#EFEAE1;
     --gray-ink:#9C9184;
-    --training:#B23A2E;
-    --training-bg:#FBE4E1;
+    --training:#2F6FA8;
+    --training-bg:#E4EEF5;
     --gold:#A9760B;
     --gold-bg:#FBF0D2;
     --cat-kitchen:#F5E7DA;
@@ -42,13 +42,14 @@
     main{padding:16px 14px 60px;}
     header{padding:16px 16px 0 16px;}
     .brand{flex-direction:column;align-items:flex-start;gap:10px;}
-    #top-right-slot{width:100%;flex-wrap:wrap;gap:12px !important;}
+    #top-right-slot{width:100%;flex-wrap:wrap;gap:8px !important;align-items:flex-start;}
     nav{overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch;}
     nav button{padding:9px 12px;font-size:12.5px;white-space:nowrap;}
     .title-row{flex-direction:column;align-items:flex-start;}
     .meta-row{gap:10px 16px;}
     .item-name{width:110px !important;}
     h2.title{font-size:17px;}
+    .chart-grid{grid-template-columns:1fr !important;}
   }
   nav{display:flex;gap:4px;flex-wrap:wrap;}
   nav button{background:transparent;border:none;color:#D8CBB8;padding:10px 16px;font-size:13.5px;font-weight:700;cursor:pointer;border-radius:8px 8px 0 0;position:relative;top:1px;font-family:inherit;}
@@ -165,7 +166,7 @@
   <header>
     <div class="brand" style="justify-content:space-between;">
       <h1>凱旋門 ATS評価システム</h1>
-      <div id="top-right-slot" style="display:flex;align-items:center;gap:18px;flex:none;"></div>
+      <div id="top-right-slot" style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:none;"></div>
     </div>
     <div class="sync-row"><span class="sync-dot" id="sync-dot"></span><span id="sync-label">同期状態を確認中...</span></div>
     <nav id="tabs"></nav>
@@ -628,6 +629,7 @@ function applyDefaultYearAndPeriod(){
   selectedYear = state.years.includes(fiscalYear) ? fiscalYear : state.years[state.years.length-1];
   dashboardPeriod = period;
   entrySelectedPeriod = period;
+  personalChartPeriod = period;
 }
 
 function render(){
@@ -708,7 +710,8 @@ function renderDashboard(){
   filterBtns.appendChild(inactiveLabel);
   titleRow.appendChild(filterBtns);
   wrap.appendChild(titleRow);
-  wrap.appendChild(renderPeriodButtons(dashboardPeriod, (p)=>{ dashboardPeriod = p; render(); }));
+  const periodRow = renderPeriodButtons(dashboardPeriod, (p)=>{ dashboardPeriod = p; render(); });
+  wrap.appendChild(periodRow);
 
   const card = document.createElement("div");
   card.className = "card";
@@ -812,7 +815,8 @@ function renderDashboard(){
     });
     downloadCSV(`ATS評価_${selectedYear}年度_${dashboardPeriod}.csv`, rows);
   };
-  titleRow.appendChild(exportBtn);
+  exportBtn.style.marginLeft = "auto";
+  periodRow.appendChild(exportBtn);
 
   const tbody = document.createElement("tbody");
   const affClass = (aff)=> aff==="ホール" ? "hall" : aff==="キッチン" ? "kitchen" : "both";
@@ -889,6 +893,7 @@ function renderDashboard(){
 let entrySelectedId = null;
 let entryShowInactive = false;
 let entrySelectedPeriod = null; // 初回ロード時に自動設定
+let personalChartPeriod = null; // ATS評価-個人のレーダーチャート用(初回ロード時に自動設定)
 const CAT_CLASS = {kitchen:"cat-kitchen", hall:"cat-hall", special:"cat-special", shift:"cat-shift", attitude:"cat-attitude"};
 const editSnapshots = {}; // key: `${staffId}:${period}` -> 直近保存時点のperiodDataのコピー(履歴の差分計算用)
 function snapKey(staffId, period){ return `${staffId}:${period}`; }
@@ -1127,6 +1132,75 @@ function renderEntry(){
 }
 
 /* ============================== ATS評価-個人(紙の評価票と同じ形で、4期間を横並びに表示。閲覧専用) ============================== */
+/* ---------- 個人タブ用:カテゴリ別達成率・店舗平均・SVGチャート ---------- */
+function categoryPct(scores, cat){
+  const vals = cat.items.map(it => (scores[it.name] ?? 0) / it.max);
+  return Math.round((vals.reduce((a,b)=>a+b,0) / vals.length) * 100);
+}
+function storeCategoryAvgPct(year, period, cat){
+  const activeStaff = state.staff.filter(s=>s.status==="active" && s.yearData[year]);
+  if(activeStaff.length===0) return 0;
+  const sum = activeStaff.reduce((acc,s)=> acc + categoryPct(s.yearData[year][period].scores, cat), 0);
+  return Math.round(sum / activeStaff.length);
+}
+function storeAverageTotal(year, period){
+  const activeStaff = state.staff.filter(s=>s.status==="active" && s.yearData[year]);
+  if(activeStaff.length===0) return 0;
+  const sum = activeStaff.reduce((acc,s)=> acc + totalScore(s.yearData[year][period]), 0);
+  return Math.round((sum / activeStaff.length) * 10) / 10;
+}
+function buildLineChartSVG(labels, seriesIndividual, seriesAvg, maxVal){
+  const width=520, height=200, pad={top:16,right:16,bottom:26,left:30};
+  const plotW = width-pad.left-pad.right, plotH = height-pad.top-pad.bottom;
+  const n = labels.length;
+  const xFor = i => pad.left + (n<=1?0:(plotW*i/(n-1)));
+  const yFor = v => pad.top + plotH - (plotH * Math.max(0,Math.min(maxVal,v))/Math.max(1,maxVal));
+  const grid = [0,0.5,1].map(f=>{
+    const y = pad.top + plotH*(1-f);
+    const val = Math.round(maxVal*f);
+    return `<line x1="${pad.left}" y1="${y}" x2="${width-pad.right}" y2="${y}" stroke="#E7DFD2" stroke-width="1"/><text x="${pad.left-6}" y="${y+3}" font-size="9" fill="#8A7F72" text-anchor="end">${val}</text>`;
+  }).join("");
+  const xLabels = labels.map((l,i)=>`<text x="${xFor(i)}" y="${height-8}" font-size="10" fill="#2B2420" text-anchor="middle">${l}</text>`).join("");
+  const pathFor = series => series.map((v,i)=> `${i===0?"M":"L"} ${xFor(i)} ${yFor(v)}`).join(" ");
+  const dotsFor = (series,color) => series.map((v,i)=> `<circle cx="${xFor(i)}" cy="${yFor(v)}" r="3.5" fill="${color}"/>`).join("");
+  const avgPart = seriesAvg ? `<path d="${pathFor(seriesAvg)}" fill="none" stroke="#8A7F72" stroke-width="2" stroke-dasharray="4,3"/>${dotsFor(seriesAvg,"#8A7F72")}` : "";
+  const indPart = `<path d="${pathFor(seriesIndividual)}" fill="none" stroke="#C1531B" stroke-width="2.5"/>${dotsFor(seriesIndividual,"#C1531B")}`;
+  return `<svg viewBox="0 0 ${width} ${height}" width="100%" style="max-width:520px;display:block;">${grid}${xLabels}${avgPart}${indPart}</svg>`;
+}
+function buildPersonalRadarSVG(labels, individualPct, avgPct){
+  const size=280, center=size/2, radius=size/2-46;
+  const n = labels.length;
+  const angleStep = (2*Math.PI)/n;
+  const pointFor = (val,i) => {
+    const r = radius*(Math.max(0,Math.min(100,val))/100);
+    const angle = -Math.PI/2 + i*angleStep;
+    return [center + r*Math.cos(angle), center + r*Math.sin(angle)];
+  };
+  const polyStr = pts => pts.map(p=>p.join(",")).join(" ");
+  const rings = [20,40,60,80,100].map(level=>{
+    const pts = labels.map((_,i)=> pointFor(level,i));
+    return `<polygon points="${polyStr(pts)}" fill="none" stroke="#E7DFD2" stroke-width="1"/>`;
+  }).join("");
+  const axisLines = labels.map((_,i)=>{
+    const [x,y] = pointFor(100,i);
+    return `<line x1="${center}" y1="${center}" x2="${x}" y2="${y}" stroke="#E7DFD2" stroke-width="1"/>`;
+  }).join("");
+  const textLabels = labels.map((lb,i)=>{
+    const angle = -Math.PI/2 + i*angleStep;
+    const lx = center + (radius+22)*Math.cos(angle);
+    const ly = center + (radius+22)*Math.sin(angle);
+    let anchor = "middle";
+    if(Math.cos(angle) > 0.3) anchor = "start";
+    else if(Math.cos(angle) < -0.3) anchor = "end";
+    return `<text x="${lx}" y="${ly}" font-size="10.5" font-weight="700" fill="#2B2420" text-anchor="${anchor}" dominant-baseline="middle">${lb}</text>`;
+  }).join("");
+  const avgPts = labels.map((_,i)=> pointFor(avgPct[i],i));
+  const indPts = labels.map((_,i)=> pointFor(individualPct[i],i));
+  const avgPoly = `<polygon points="${polyStr(avgPts)}" fill="none" stroke="#8A7F72" stroke-width="2" stroke-dasharray="4,3"/>`;
+  const indPoly = `<polygon points="${polyStr(indPts)}" fill="#C1531B" fill-opacity="0.22" stroke="#C1531B" stroke-width="2.5"/>`;
+  return `<svg viewBox="0 0 ${size} ${size}" width="100%" style="max-width:300px;display:block;margin:0 auto;">${rings}${axisLines}${avgPoly}${indPoly}${textLabels}</svg>`;
+}
+
 function renderPersonal(){
   const wrap = document.createElement("div");
   const h = document.createElement("h2");
@@ -1234,8 +1308,50 @@ function renderPersonal(){
     commentWrap.appendChild(box);
   });
   card.appendChild(commentWrap);
-
   wrap.appendChild(card);
+
+  // 推移グラフ + 店舗平均とのレーダーチャート比較
+  const chartCard = document.createElement("div");
+  chartCard.className = "card";
+  chartCard.innerHTML = `<div style="font-weight:800;font-size:15px;margin-bottom:4px;">推移とチーム比較</div><div style="font-size:12px;color:var(--muted);margin-bottom:14px;">千葉NT店の在籍スタッフ平均と比較しています。</div>`;
+
+  const chartGrid = document.createElement("div");
+  chartGrid.className = "chart-grid";
+  chartGrid.style.cssText = "display:grid;grid-template-columns:1.3fr 1fr;gap:24px;";
+
+  // 左:合計点数の推移(4期間・店舗平均との比較)
+  const lineBox = document.createElement("div");
+  const lineTitle = document.createElement("div");
+  lineTitle.style.cssText = "font-size:12.5px;font-weight:700;color:var(--muted);margin-bottom:8px;";
+  lineTitle.textContent = "合計点数の推移(実線:本人 ・ 点線:店舗平均)";
+  lineBox.appendChild(lineTitle);
+  const indTotals = PERIODS.map(p => totalScore(staffObj.yearData[selectedYear][p]));
+  const avgTotals = PERIODS.map(p => storeAverageTotal(selectedYear, p));
+  const lineMax = Math.max(5, Math.ceil(Math.max(...indTotals, ...avgTotals, 5) / 5) * 5);
+  lineBox.innerHTML += buildLineChartSVG(PERIODS, indTotals, avgTotals, lineMax);
+  chartGrid.appendChild(lineBox);
+
+  // 右:カテゴリ別レーダーチャート(期間を選んで比較)
+  const radarBox = document.createElement("div");
+  const radarPeriodRow = renderPeriodButtons(personalChartPeriod, (p)=>{ personalChartPeriod = p; render(); });
+  radarPeriodRow.style.marginBottom = "6px";
+  radarBox.appendChild(radarPeriodRow);
+  const catLabels = CATEGORIES.map(c=>c.label);
+  const indPct = CATEGORIES.map(c=> categoryPct(staffObj.yearData[selectedYear][personalChartPeriod].scores, c));
+  const avgPct = CATEGORIES.map(c=> storeCategoryAvgPct(selectedYear, personalChartPeriod, c));
+  radarBox.innerHTML += buildPersonalRadarSVG(catLabels, indPct, avgPct);
+  const radarLegend = document.createElement("div");
+  radarLegend.style.cssText = "display:flex;gap:16px;justify-content:center;margin-top:4px;font-size:11.5px;color:var(--muted);flex-wrap:wrap;";
+  radarLegend.innerHTML = `
+    <span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:12px;height:12px;background:var(--ember);border-radius:3px;display:inline-block;"></span>${staffObj.name}</span>
+    <span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:16px;height:0;border-top:2px dashed var(--muted);display:inline-block;"></span>千葉NT店平均</span>
+  `;
+  radarBox.appendChild(radarLegend);
+  chartGrid.appendChild(radarBox);
+
+  chartCard.appendChild(chartGrid);
+  wrap.appendChild(chartCard);
+
   return wrap;
 }
 function renderStaffAdmin(){
