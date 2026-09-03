@@ -21,8 +21,10 @@
     --amber-bg:#FBF0DC;
     --gray-bg:#EFEAE1;
     --gray-ink:#9C9184;
-    --perfect:#B23A2E;
-    --perfect-bg:#FBE4E1;
+    --training:#B23A2E;
+    --training-bg:#FBE4E1;
+    --gold:#A9760B;
+    --gold-bg:#FBF0D2;
     --cat-kitchen:#F5E7DA;
     --cat-hall:#E4EEF1;
     --cat-special:#EDE7F3;
@@ -76,9 +78,9 @@
   .aff-chip.both{background:var(--amber-bg);color:var(--amber);}
   .score-cell{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:20px;border-radius:5px;font-weight:800;font-variant-numeric:tabular-nums;padding:0 3px;}
   .score-cell.ready{background:var(--green-bg);color:var(--green);}
-  .score-cell.mid{background:var(--amber-bg);color:var(--amber);}
+  .score-cell.mid{background:var(--training-bg);color:var(--training);}
   .score-cell.low{background:var(--gray-bg);color:var(--gray-ink);}
-  .score-cell.perfect{background:var(--perfect-bg);color:var(--perfect);}
+  .score-cell.perfect{background:var(--gold-bg);color:var(--gold);}
   .legend{display:flex;gap:14px;margin:12px 2px 0;font-size:11.5px;color:var(--muted);flex-wrap:wrap;align-items:center;}
   .legend span{display:inline-flex;align-items:center;gap:5px;}
   .dot{width:10px;height:10px;border-radius:3px;display:inline-block;}
@@ -115,9 +117,9 @@
   table.pcard-table th.item-col-head{text-align:left;padding-left:12px;}
   .pcard-score{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;font-weight:800;font-size:13px;border:2px solid var(--line);color:var(--muted);}
   .pcard-score.ready{background:var(--green-bg);color:var(--green);border-color:var(--green);}
-  .pcard-score.mid{background:var(--amber-bg);color:var(--amber);border-color:var(--amber);}
+  .pcard-score.mid{background:var(--training-bg);color:var(--training);border-color:var(--training);}
   .pcard-score.low{background:var(--gray-bg);color:var(--gray-ink);border-color:var(--line);}
-  .pcard-score.perfect{background:var(--perfect-bg);color:var(--perfect);border-color:var(--perfect);}
+  .pcard-score.perfect{background:var(--gold-bg);color:var(--gold);border-color:var(--gold);}
   .chip-btn.selected{background:var(--ember);border-color:var(--ember);color:#fff;}
 
   button.primary{background:var(--ember);color:#fff;border:none;border-radius:8px;padding:10px 20px;font-weight:800;font-size:13.5px;cursor:pointer;font-family:inherit;}
@@ -228,7 +230,7 @@ function scoreClass(value, max){
 }
 const EVALUATOR_SEED_NAMES = ["青木","井上","熊本","寺澤","木内","篠原","和田"]; // 移行専用(既存データのisEvaluator初期値判定に使用)
 function starCount(scores){
-  return ALL_ITEMS.filter(it => scoreClass(scores[it.name] ?? 0, it.max) === "ready").length;
+  return ALL_ITEMS.filter(it => (scores[it.name] ?? 0) >= starAt(it.max)).length;
 }
 function totalScore(periodData){
   return starCount(periodData.scores) + (periodData.bonus ?? 0);
@@ -843,9 +845,9 @@ function renderDashboard(){
   legend.className = "legend";
   legend.innerHTML = `
     <span><span class="dot" style="background:var(--green)"></span>星獲得</span>
-    <span><span class="dot" style="background:var(--amber)"></span>トレーニング中</span>
+    <span><span class="dot" style="background:var(--training)"></span>トレーニング中</span>
     <span><span class="dot" style="background:var(--gray-ink)"></span>未経験</span>
-    <span><span class="dot" style="background:var(--perfect)"></span>満点</span>
+    <span><span class="dot" style="background:var(--gold)"></span>満点</span>
   `;
   card.appendChild(legend);
 
