@@ -362,10 +362,19 @@ function computeTenureText(hireDateStr){
   if(years < 0) return "-";
   return `${years}年${months}ヶ月`;
 }
+function computeTenureMonths(hireDateStr){
+  if(!hireDateStr) return null;
+  const hire = new Date(hireDateStr);
+  const now = new Date();
+  if(isNaN(hire.getTime())) return null;
+  let months = (now.getFullYear()-hire.getFullYear())*12 + (now.getMonth()-hire.getMonth());
+  if(now.getDate() < hire.getDate()) months -= 1;
+  return months < 0 ? null : months;
+}
 const INITIAL_YEAR = "2026";
 function seedStaff(){
   return STAFF_SEED.map(s => ({
-    ...s, status:"active", isEvaluator: EVALUATOR_SEED_NAMES.includes(s.name), hasLogin:false,
+    ...s, status:"active", isEvaluator: EVALUATOR_SEED_NAMES.includes(s.name), isEvaluatee:true, hasLogin:false,
     yearData: { [INITIAL_YEAR]: emptyPeriods() },
   }));
 }
@@ -384,6 +393,7 @@ function migrateCoreState(s){
   s.staff.forEach(st=>{
     if(!st.status){ st.status = st.active===false ? "resigned" : "active"; }
     if(st.isEvaluator === undefined){ st.isEvaluator = EVALUATOR_SEED_NAMES.includes(st.name); }
+    if(st.isEvaluatee === undefined){ st.isEvaluatee = true; } // 被評価者かどうか。デフォルトは全員対象
     if(st.hasLogin === undefined){ st.hasLogin = false; }
     if(st.yearData){
       Object.values(st.yearData).forEach(yd=>{
@@ -911,7 +921,7 @@ function renderDashboard(){
   table.appendChild(thead);
 
   const filtered = state.staff.filter(st =>
-    affiliationMatches(st.affiliation, dashboardFilter) && (dashboardShowInactive || st.status==="active")
+    st.isEvaluatee && affiliationMatches(st.affiliation, dashboardFilter) && (dashboardShowInactive || st.status==="active")
   );
   const sorted = [...filtered].sort((a,b)=>{
     let va, vb;
@@ -1053,7 +1063,7 @@ function renderEntry(){
   const sel = document.createElement("select");
   sel.style.flex = "1";
   const STATUS_LABEL = {active:"", leave:"(休職)", resigned:"(退職)"};
-  const visibleStaff = state.staff.filter(s => entryShowInactive || s.status==="active");
+  const visibleStaff = state.staff.filter(s => s.isEvaluatee && (entryShowInactive || s.status==="active"));
   sel.innerHTML = visibleStaff.map(s=>`<option value="${s.id}">${s.name}${STATUS_LABEL[s.status]||""}</option>`).join("");
   if(!entrySelectedId || !visibleStaff.some(s=>s.id===entrySelectedId)) entrySelectedId = visibleStaff[0]?.id;
   sel.value = entrySelectedId;
@@ -1296,7 +1306,7 @@ function categoryPct(scores, cat){
   return Math.round((vals.reduce((a,b)=>a+b,0) / vals.length) * 100);
 }
 function storeCategoryAvgPct(year, period, cat){
-  const activeStaff = state.staff.filter(s=>s.status==="active" && s.yearData[year]);
+  const activeStaff = state.staff.filter(s=>s.isEvaluatee && s.status==="active" && s.yearData[year]);
   if(activeStaff.length===0) return 0;
   const sum = activeStaff.reduce((acc,s)=> acc + categoryPct(s.yearData[year][period].scores, cat), 0);
   return Math.round(sum / activeStaff.length);
@@ -1311,75 +1321,63 @@ function affiliationMatchesItem(staffAffiliation, categoryId){
 }
 function storeItemAvgPct(year, period, item){
   const relevantStaff = state.staff.filter(s=>
-    s.status==="active" && s.yearData[year] && affiliationMatchesItem(s.affiliation, item.categoryId)
+    s.isEvaluatee && s.status==="active" && s.yearData[year] && affiliationMatchesItem(s.affiliation, item.categoryId)
   );
   if(relevantStaff.length===0) return 0;
   const sum = relevantStaff.reduce((acc,s)=> acc + ((s.yearData[year][period].scores[item.name] ?? 0) / item.max * 100), 0);
   return Math.round(sum / relevantStaff.length);
 }
 function storeAverageTotal(year, period){
-  const activeStaff = state.staff.filter(s=>s.status==="active" && s.yearData[year]);
+  const activeStaff = state.staff.filter(s=>s.isEvaluatee && s.status==="active" && s.yearData[year]);
   if(activeStaff.length===0) return 0;
   const sum = activeStaff.reduce((acc,s)=> acc + totalScore(s.yearData[year][period]), 0);
   return Math.round((sum / activeStaff.length) * 10) / 10;
 }
 
-/* ============================== 9BOXマップ用の計算 ============================== */
-/* その人の所属に関係する項目だけで達成率%を出す(達成度指標を作った時と同じ、所属を考慮した公平な計算方法) */
+/* ============================== データ分析(勤続 × 達成率の散布図) ============================== */
+/* その人の所属に関係する項目(①②③のオペレーション15項目)だけで達成率%を出す */
 function personalAchievementPct(staffObj, scores){
-  const relevant = ALL_ITEMS.filter(it => affiliationMatchesItem(staffObj.affiliation, it.categoryId));
+  const relevant = OPERATION_ITEMS.filter(it => affiliationMatchesItem(staffObj.affiliation, it.categoryId));
   if(relevant.length===0) return 0;
   const sum = relevant.reduce((acc,it)=> acc + (scores[it.name] ?? 0)/it.max, 0);
   return Math.round((sum/relevant.length)*1000)/10; // 小数第1位まで
 }
-/* 全年度・全期間を時系列順に並べたリスト({year,period}の配列)。年度またぎの推移計算に使う。 */
-function chronologicalPeriodList(){
-  const years = [...state.years].sort();
-  const list = [];
-  years.forEach(y=> PERIODS.forEach(p=> list.push({year:y, period:p})));
-  return list;
-}
-/* 指定の年度・時期までの、その人の達成率%の時系列(対象外の期間は除く)。 */
-function achievementSeriesUpTo(staffObj, targetYear, targetPeriod){
-  const all = chronologicalPeriodList();
-  const targetIdx = all.findIndex(x=>x.year===targetYear && x.period===targetPeriod);
-  if(targetIdx === -1) return [];
-  const series = [];
-  for(let i=0; i<=targetIdx; i++){
-    const {year, period} = all[i];
-    const yd = staffObj.yearData[year];
-    if(!yd || !yd[period]) continue;
-    const pd = yd[period];
-    if(pd.exempt) continue;
-    series.push(personalAchievementPct(staffObj, pd.scores));
+/* 勤続(横軸) × 達成率(縦軸)の散布図。バケツ分け・伸び率の判定は行わず、点をそのままプロットする。 */
+function buildScatterSVG(points){
+  const width=680, height=420, pad={top:16, right:24, bottom:40, left:46};
+  const plotW = width-pad.left-pad.right, plotH = height-pad.top-pad.bottom;
+  const maxMonths = Math.max(24, ...points.map(p=>p.months), 1);
+  const xFor = m => pad.left + (m/maxMonths)*plotW;
+  const yFor = pct => pad.top + plotH - (Math.max(0,Math.min(100,pct))/100)*plotH;
+  const yGrid = [0,25,50,75,100].map(v=>{
+    const yy = yFor(v);
+    return `<line x1="${pad.left}" y1="${yy}" x2="${width-pad.right}" y2="${yy}" stroke="#E7DFD2" stroke-width="1"/><text x="${pad.left-8}" y="${yy+3}" font-size="9" fill="#8A7F72" text-anchor="end">${v}%</text>`;
+  }).join("");
+  const maxYears = Math.ceil(maxMonths/12);
+  const xGrid = [];
+  for(let yrs=0; yrs<=maxYears; yrs++){
+    const xx = xFor(yrs*12);
+    if(xx > width-pad.right+1) continue;
+    xGrid.push(`<line x1="${xx}" y1="${pad.top}" x2="${xx}" y2="${height-pad.bottom}" stroke="#F1EBDF" stroke-width="1"/><text x="${xx}" y="${height-pad.bottom+16}" font-size="9" fill="#8A7F72" text-anchor="middle">${yrs}年</text>`);
   }
-  return series;
+  const axisLines = `
+    <line x1="${pad.left}" y1="${pad.top}" x2="${pad.left}" y2="${height-pad.bottom}" stroke="#8A7F72" stroke-width="1.5"/>
+    <line x1="${pad.left}" y1="${height-pad.bottom}" x2="${width-pad.right}" y2="${height-pad.bottom}" stroke="#8A7F72" stroke-width="1.5"/>
+  `;
+  const dots = points.map(p=>{
+    const px = xFor(p.months), py = yFor(p.pct);
+    return `<g>
+      <circle cx="${px}" cy="${py}" r="5" fill="#C1531B" fill-opacity="0.78" stroke="#9C4013" stroke-width="1">
+        <title>${p.label}:勤続${(p.months/12).toFixed(1)}年 ・ 達成率${p.pct}%</title>
+      </circle>
+      <text x="${px+7}" y="${py+3}" font-size="9" fill="#2B2420">${p.label}</text>
+    </g>`;
+  }).join("");
+  return `<svg viewBox="0 0 ${width} ${height}" width="100%" style="max-width:720px;display:block;">
+    ${yGrid}${xGrid.join("")}${axisLines}${dots}
+  </svg>`;
 }
-/* 伸び率(縦軸):データ点が2つなら単純な差、3つ以上なら連続する差の平均(平均的な傾き)。
-   1つ以下(前期データが無い新人など)は判定不可としてnullを返す。 */
-function growthTrend(series){
-  if(series.length < 2) return null;
-  if(series.length === 2) return series[1] - series[0];
-  const diffs = [];
-  for(let i=1;i<series.length;i++) diffs.push(series[i]-series[i-1]);
-  return diffs.reduce((a,b)=>a+b,0) / diffs.length;
-}
-function bucketX(pct){ // 実績(横軸)
-  if(pct >= 66.7) return 2; // 高
-  if(pct >= 33.3) return 1; // 中
-  return 0; // 低
-}
-function bucketY(trend){ // 将来性(縦軸)。閾値は目安。±5ポイント以上の変化を「明確な変化」とみなす
-  if(trend > 5) return 2; // 上昇
-  if(trend >= -5) return 1; // 横ばい
-  return 0; // 下降
-}
-const NINEBOX_LABELS = [
-  // [横軸低, 横軸中, 横軸高] × 縦軸(低→高)
-  ["要改善",  "現状維持", "ベテラン"],
-  ["伸び悩み", "標準",    "主力"],
-  ["期待枠",  "好調",    "エース"],
-];
+
 function buildLineChartSVG(labels, seriesIndividual, seriesAvg, maxVal){
   const width=520, height=200, pad={top:16,right:16,bottom:26,left:30};
   const plotW = width-pad.left-pad.right, plotH = height-pad.top-pad.bottom;
@@ -1449,7 +1447,7 @@ function renderPersonal(){
   const sel = document.createElement("select");
   sel.style.flex = "1";
   const STATUS_LABEL = {active:"", leave:"(休職)", resigned:"(退職)"};
-  const visibleStaff = state.staff.filter(s => entryShowInactive || s.status==="active");
+  const visibleStaff = state.staff.filter(s => s.isEvaluatee && (entryShowInactive || s.status==="active"));
   sel.innerHTML = visibleStaff.map(s=>`<option value="${s.id}">${s.name}${STATUS_LABEL[s.status]||""}</option>`).join("");
   if(!entrySelectedId || !visibleStaff.some(s=>s.id===entrySelectedId)) entrySelectedId = visibleStaff[0]?.id;
   sel.value = entrySelectedId;
@@ -1617,15 +1615,14 @@ function renderNinebox(){
   explainCard.className = "card";
   explainCard.innerHTML = `
     <div style="font-size:12.5px;color:var(--muted);line-height:1.8;">
-      <strong>横軸</strong>:選んだ時期時点の達成率(所属に関係する項目だけで計算、所属を考慮した公平な指標)<br>
-      <strong>縦軸</strong>:直近の伸び率(データが2期分なら単純な差、3期分以上なら連続する差の平均=傾き)<br>
-      新人や「評価対象外」に設定されている期間は判定材料が無いため、下の「判定不可」に分けて表示しています。
+      横軸:勤続年数 ・ 縦軸:選んだ時期時点の達成率(①②③のオペレーション15項目、所属を考慮)<br>
+      点にマウスを乗せると詳しい数値が出ます。判定材料が無い人(新人・評価対象外)は下に別枠で表示しています。
     </div>
   `;
   wrap.appendChild(explainCard);
 
-  const targets = state.staff.filter(s=> s.status==="active" && affiliationMatches(s.affiliation, nineboxFilter));
-  const classified = [];
+  const targets = state.staff.filter(s=> s.isEvaluatee && s.status==="active" && affiliationMatches(s.affiliation, nineboxFilter));
+  const plotted = [];
   const unclassified = [];
 
   targets.forEach(st=>{
@@ -1633,60 +1630,31 @@ function renderNinebox(){
     const pd = yd ? yd[nineboxPeriod] : null;
     if(!pd){ unclassified.push({staff:st, reason:"データなし"}); return; }
     if(pd.exempt){ unclassified.push({staff:st, reason:"評価対象外"}); return; }
-    const series = achievementSeriesUpTo(st, selectedYear, nineboxPeriod);
-    if(series.length === 0){ unclassified.push({staff:st, reason:"データなし"}); return; }
-    const pct = series[series.length-1];
-    const trend = growthTrend(series);
-    if(trend === null){ unclassified.push({staff:st, reason:"前期データなし(初回評価)"}); return; }
-    classified.push({staff:st, x:bucketX(pct), y:bucketY(trend), pct, trend});
+    const months = computeTenureMonths(st.hireDate);
+    if(months === null){ unclassified.push({staff:st, reason:"入社日未登録"}); return; }
+    const pct = personalAchievementPct(st, pd.scores);
+    plotted.push({staff:st, months, pct});
   });
 
-  const gridCard = document.createElement("div");
-  gridCard.className = "card";
-  const grid = document.createElement("div");
-  grid.style.cssText = "display:grid;grid-template-columns:repeat(3,1fr);gap:10px;";
-  for(let yb=2; yb>=0; yb--){
-    for(let xb=0; xb<=2; xb++){
-      const cell = document.createElement("div");
-      cell.style.cssText = "border:1px solid var(--line);border-radius:10px;padding:10px;min-height:110px;background:var(--cream);";
-      const label = document.createElement("div");
-      label.style.cssText = "font-weight:800;font-size:11.5px;color:var(--ember-dark);margin-bottom:8px;";
-      label.textContent = NINEBOX_LABELS[yb][xb];
-      cell.appendChild(label);
-      const members = classified.filter(c=>c.x===xb && c.y===yb);
-      if(members.length===0){
-        const empty = document.createElement("div");
-        empty.style.cssText = "font-size:11px;color:var(--muted);";
-        empty.textContent = "該当なし";
-        cell.appendChild(empty);
-      } else {
-        members.forEach(m=>{
-          const chip = document.createElement("div");
-          chip.style.cssText = "font-size:12px;font-weight:700;padding:4px 8px;background:#fff;border-radius:6px;margin-bottom:4px;border:1px solid var(--line);";
-          const trendStr = (m.trend>=0?"+":"") + (Math.round(m.trend*10)/10);
-          chip.title = `達成率 ${m.pct}% ・ 伸び ${trendStr}pt`;
-          chip.textContent = m.staff.name;
-          cell.appendChild(chip);
-        });
-      }
-      grid.appendChild(cell);
-    }
+  const chartCard = document.createElement("div");
+  chartCard.className = "card";
+  if(plotted.length === 0){
+    chartCard.innerHTML = `<div class="empty">プロットできるデータがありません</div>`;
+  } else {
+    const svgWrap = document.createElement("div");
+    svgWrap.innerHTML = buildScatterSVG(plotted.map(p=>({months:p.months, pct:p.pct, label:p.staff.name})));
+    chartCard.appendChild(svgWrap);
+    const axisNote = document.createElement("div");
+    axisNote.style.cssText = "font-size:11px;color:var(--muted);margin-top:4px;";
+    axisNote.textContent = "横軸:勤続年数(右ほど長い) ・ 縦軸:達成率%(上ほど高い)";
+    chartCard.appendChild(axisNote);
   }
-  gridCard.appendChild(grid);
-  const axisNote = document.createElement("div");
-  axisNote.style.cssText = "display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:10px;";
-  axisNote.innerHTML = `<span>← 実績 低い</span><span style="margin-left:auto;">実績 高い →</span>`;
-  gridCard.appendChild(axisNote);
-  const axisNote2 = document.createElement("div");
-  axisNote2.style.cssText = "font-size:11px;color:var(--muted);margin-top:4px;";
-  axisNote2.textContent = "縦方向は下から上に「伸び 下降→横ばい→上昇」";
-  gridCard.appendChild(axisNote2);
-  wrap.appendChild(gridCard);
+  wrap.appendChild(chartCard);
 
   if(unclassified.length > 0){
     const uCard = document.createElement("div");
     uCard.className = "card";
-    uCard.innerHTML = `<div style="font-weight:800;margin-bottom:10px;">判定不可(${unclassified.length}名)</div>`;
+    uCard.innerHTML = `<div style="font-weight:800;margin-bottom:10px;">プロット対象外(${unclassified.length}名)</div>`;
     const list = document.createElement("div");
     list.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;";
     unclassified.forEach(u=>{
@@ -1902,6 +1870,61 @@ function renderStaffAdmin(){
   addRow.appendChild(addEvalBtn);
   evalCard.appendChild(addRow);
   wrap.appendChild(evalCard);
+
+  // 被評価者から除外(社員など、別の評価指標を使う人をこの評価から外す)
+  const exCard = document.createElement("div");
+  exCard.className = "card";
+  exCard.innerHTML = `<div style="font-weight:800;font-size:15px;margin-bottom:4px;">被評価者から除外</div><div style="font-size:12px;color:var(--muted);margin-bottom:14px;">ここに入れた人は、ATS評価-全体・評価入力・個人・データ分析の対象一覧から外れます(評価者としては引き続き選べます。ログインも可能です)。</div>`;
+  const currentExcluded = state.staff.filter(s=>!s.isEvaluatee);
+  const exChipsWrap = document.createElement("div");
+  exChipsWrap.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;";
+  if(currentExcluded.length===0){
+    const empty = document.createElement("div");
+    empty.style.cssText = "color:var(--muted);font-size:13px;";
+    empty.textContent = "除外されている人はいません。";
+    exChipsWrap.appendChild(empty);
+  }
+  currentExcluded.forEach(st=>{
+    const chip = document.createElement("span");
+    chip.style.cssText = "display:inline-flex;align-items:center;gap:6px;background:var(--gray-bg);color:var(--gray-ink);border-radius:20px;padding:5px 8px 5px 14px;font-size:12.5px;font-weight:700;";
+    chip.textContent = st.name;
+    const removeBtn = document.createElement("button");
+    removeBtn.textContent = "✕";
+    removeBtn.style.cssText = "background:none;border:none;color:inherit;cursor:pointer;font-size:12px;padding:2px 4px;font-family:inherit;";
+    removeBtn.title = "被評価者に戻す";
+    removeBtn.onclick = ()=>{
+      st.isEvaluatee = true;
+      saveState();
+      render();
+    };
+    chip.appendChild(removeBtn);
+    exChipsWrap.appendChild(chip);
+  });
+  exCard.appendChild(exChipsWrap);
+
+  const exAddRow = document.createElement("div");
+  exAddRow.style.cssText = "display:flex;gap:10px;align-items:center;";
+  const exAddSelect = document.createElement("select");
+  exAddSelect.style.maxWidth = "260px";
+  const exCandidates = state.staff.filter(s=>s.isEvaluatee && s.status==="active");
+  exAddSelect.innerHTML = exCandidates.length
+    ? exCandidates.map(s=>`<option value="${s.id}">${s.name}</option>`).join("")
+    : `<option value="">(対象にできる在籍スタッフがいません)</option>`;
+  exAddRow.appendChild(exAddSelect);
+  const exAddBtn = document.createElement("button");
+  exAddBtn.className = "ghost small";
+  exAddBtn.textContent = "被評価者から除外する";
+  exAddBtn.style.cssText = "background:transparent;color:var(--ember-dark);border:1px solid var(--ember);border-radius:8px;padding:8px 16px;font-weight:700;font-size:12.5px;cursor:pointer;font-family:inherit;";
+  exAddBtn.onclick = ()=>{
+    const target = state.staff.find(s=>s.id===exAddSelect.value);
+    if(!target) return;
+    target.isEvaluatee = false;
+    saveState();
+    render();
+  };
+  exAddRow.appendChild(exAddBtn);
+  exCard.appendChild(exAddRow);
+  wrap.appendChild(exCard);
 
   return wrap;
 }
