@@ -1344,7 +1344,7 @@ function personalAchievementPct(staffObj, scores){
 }
 /* 勤続(横軸) × 達成率(縦軸)の散布図。バケツ分け・伸び率の判定は行わず、点をそのままプロットする。 */
 function buildScatterSVG(points){
-  const width=680, height=420, pad={top:16, right:24, bottom:40, left:46};
+  const width=680, height=440, pad={top:16, right:24, bottom:54, left:60};
   const plotW = width-pad.left-pad.right, plotH = height-pad.top-pad.bottom;
   const maxMonths = Math.max(24, ...points.map(p=>p.months), 1);
   const xFor = m => pad.left + (m/maxMonths)*plotW;
@@ -1364,6 +1364,10 @@ function buildScatterSVG(points){
     <line x1="${pad.left}" y1="${pad.top}" x2="${pad.left}" y2="${height-pad.bottom}" stroke="#8A7F72" stroke-width="1.5"/>
     <line x1="${pad.left}" y1="${height-pad.bottom}" x2="${width-pad.right}" y2="${height-pad.bottom}" stroke="#8A7F72" stroke-width="1.5"/>
   `;
+  const axisTitles = `
+    <text x="${pad.left + plotW/2}" y="${height-8}" font-size="11.5" font-weight="700" fill="#2B2420" text-anchor="middle">勤続年数</text>
+    <text x="16" y="${pad.top + plotH/2}" font-size="11.5" font-weight="700" fill="#2B2420" text-anchor="middle" transform="rotate(-90 16 ${pad.top + plotH/2})">オペレーション15項目達成率</text>
+  `;
   const dots = points.map(p=>{
     const px = xFor(p.months), py = yFor(p.pct);
     return `<g>
@@ -1374,7 +1378,7 @@ function buildScatterSVG(points){
     </g>`;
   }).join("");
   return `<svg viewBox="0 0 ${width} ${height}" width="100%" style="max-width:720px;display:block;">
-    ${yGrid}${xGrid.join("")}${axisLines}${dots}
+    ${axisTitles}${yGrid}${xGrid.join("")}${axisLines}${dots}
   </svg>`;
 }
 
@@ -1589,6 +1593,115 @@ function renderPersonal(){
   return wrap;
 }
 /* ============================== 9BOXマップ ============================== */
+/* その項目に関係する所属の在籍・被評価者のうち、★基準を満たしている人を返す(単一障害点検出用) */
+function itemStarHolders(item, year, period){
+  const relevantStaff = state.staff.filter(s=>
+    s.isEvaluatee && s.status==="active" && affiliationMatchesItem(s.affiliation, item.categoryId)
+  );
+  const holders = [];
+  relevantStaff.forEach(s=>{
+    const yd = s.yearData[year];
+    const pd = yd ? yd[period] : null;
+    if(!pd || pd.exempt) return;
+    const v = pd.scores[item.name] ?? 0;
+    if(v >= starAt(item.max)) holders.push(s);
+  });
+  return holders;
+}
+/* ページ上部の全て/ホール/キッチンの絞り込みを、項目の表示可否として流用する */
+function itemVisibleForFilter(item, filter){
+  if(filter==="hall") return item.categoryId !== "kitchen";
+  if(filter==="kitchen") return item.categoryId !== "hall";
+  return true;
+}
+/* 分析モジュールの登録リスト。今後、新しい分析を増やす時はここに1つ追加するだけでよい。
+   各モジュールは render() が中身のDOMノードを1つ返す、という形で自己完結させている。 */
+const ANALYSIS_MODULES = [
+  {
+    id: "tenureScatter",
+    label: "勤続 × 達成率 散布図",
+    render(){
+      const targets = state.staff.filter(s=> s.isEvaluatee && s.status==="active" && affiliationMatches(s.affiliation, nineboxFilter));
+      const plotted = [];
+      const unclassified = [];
+      targets.forEach(st=>{
+        const yd = st.yearData[selectedYear];
+        const pd = yd ? yd[nineboxPeriod] : null;
+        if(!pd){ unclassified.push({staff:st, reason:"データなし"}); return; }
+        if(pd.exempt){ unclassified.push({staff:st, reason:"評価対象外"}); return; }
+        const months = computeTenureMonths(st.hireDate);
+        if(months === null){ unclassified.push({staff:st, reason:"入社日未登録"}); return; }
+        const pct = personalAchievementPct(st, pd.scores);
+        plotted.push({staff:st, months, pct});
+      });
+
+      const container = document.createElement("div");
+      if(plotted.length === 0){
+        container.innerHTML = `<div class="empty">プロットできるデータがありません</div>`;
+      } else {
+        const svgWrap = document.createElement("div");
+        svgWrap.innerHTML = buildScatterSVG(plotted.map(p=>({months:p.months, pct:p.pct, label:p.staff.name})));
+        container.appendChild(svgWrap);
+      }
+      if(unclassified.length > 0){
+        const uWrap = document.createElement("div");
+        uWrap.style.cssText = "margin-top:16px;padding-top:14px;border-top:1px solid var(--line);";
+        uWrap.innerHTML = `<div style="font-weight:800;font-size:12.5px;margin-bottom:8px;">プロット対象外(${unclassified.length}名)</div>`;
+        const list = document.createElement("div");
+        list.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;";
+        unclassified.forEach(u=>{
+          const chip = document.createElement("span");
+          chip.style.cssText = "font-size:12px;padding:4px 10px;border-radius:20px;background:var(--gray-bg);color:var(--gray-ink);";
+          chip.textContent = `${u.staff.name}(${u.reason})`;
+          list.appendChild(chip);
+        });
+        uWrap.appendChild(list);
+        container.appendChild(uWrap);
+      }
+      return container;
+    }
+  },
+  {
+    id: "busFactor",
+    label: "★保持者数",
+    render(){
+      const container = document.createElement("div");
+      const RISK_META = {
+        0: {label:"危機的", bg:"#FBE4E1", color:"#B23A2E"},
+        1: {label:"高リスク", bg:"var(--amber-bg)", color:"var(--amber)"},
+        2: {label:"要注意", bg:"var(--gray-bg)", color:"var(--gray-ink)"},
+      };
+      const rows = ALL_ITEMS
+        .filter(it => itemVisibleForFilter(it, nineboxFilter))
+        .map(it => ({ item: it, holders: itemStarHolders(it, selectedYear, nineboxPeriod) }))
+        .filter(r => r.holders.length <= 2)
+        .sort((a,b)=> a.holders.length - b.holders.length);
+
+      if(rows.length === 0){
+        container.innerHTML = `<div class="empty">該当する項目はありません(表示中の項目は全て★保持者が3人以上います)</div>`;
+        return container;
+      }
+      rows.forEach(r=>{
+        const meta = RISK_META[r.holders.length];
+        const catLabel = CATEGORIES.find(c=>c.id===r.item.categoryId)?.label ?? "";
+        const row = document.createElement("div");
+        row.style.cssText = "display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);";
+        const left = document.createElement("div");
+        left.innerHTML = `<div style="font-weight:800;font-size:13.5px;">${r.item.name} <span style="font-size:11px;color:var(--muted);font-weight:400;">(${catLabel})</span></div>` +
+          (r.holders.length>0 ? `<div style="font-size:12px;color:var(--muted);margin-top:3px;">できる人:${r.holders.map(h=>h.name).join("、")}</div>` : "");
+        row.appendChild(left);
+        const badge = document.createElement("span");
+        badge.style.cssText = `flex:none;font-size:11.5px;font-weight:800;padding:3px 10px;border-radius:20px;background:${meta.bg};color:${meta.color};white-space:nowrap;`;
+        badge.textContent = `${meta.label}(${r.holders.length}人)`;
+        row.appendChild(badge);
+        container.appendChild(row);
+      });
+      return container;
+    }
+  },
+];
+const analysisOpenState = {}; // {[moduleId]: boolean} 未設定(undefined)は「開いている」扱い
+
 function renderNinebox(){
   const wrap = document.createElement("div");
   const titleRow = document.createElement("div");
@@ -1611,61 +1724,32 @@ function renderNinebox(){
   wrap.appendChild(titleRow);
   wrap.appendChild(renderPeriodButtons(nineboxPeriod, (p)=>{ nineboxPeriod = p; render(); }));
 
-  const explainCard = document.createElement("div");
-  explainCard.className = "card";
-  explainCard.innerHTML = `
-    <div style="font-size:12.5px;color:var(--muted);line-height:1.8;">
-      横軸:勤続年数 ・ 縦軸:選んだ時期時点の達成率(①②③のオペレーション15項目、所属を考慮)<br>
-      点にマウスを乗せると詳しい数値が出ます。判定材料が無い人(新人・評価対象外)は下に別枠で表示しています。
-    </div>
-  `;
-  wrap.appendChild(explainCard);
+  ANALYSIS_MODULES.forEach(mod=>{
+    const modCard = document.createElement("div");
+    modCard.className = "card";
+    const isOpen = analysisOpenState[mod.id] !== false;
 
-  const targets = state.staff.filter(s=> s.isEvaluatee && s.status==="active" && affiliationMatches(s.affiliation, nineboxFilter));
-  const plotted = [];
-  const unclassified = [];
+    const modHeader = document.createElement("div");
+    modHeader.style.cssText = "display:flex;align-items:flex-start;justify-content:space-between;gap:12px;cursor:pointer;";
+    const modTitleBox = document.createElement("div");
+    modTitleBox.innerHTML = `<div style="font-weight:800;font-size:14px;">${mod.label}</div>`;
+    modHeader.appendChild(modTitleBox);
+    const toggleBtn = document.createElement("button");
+    toggleBtn.textContent = isOpen ? "閉じる" : "開く";
+    toggleBtn.style.cssText = "background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:20px;padding:5px 14px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;flex:none;white-space:nowrap;";
+    toggleBtn.onclick = (e)=>{ e.stopPropagation(); analysisOpenState[mod.id] = !isOpen; render(); };
+    modHeader.appendChild(toggleBtn);
+    modHeader.onclick = ()=>{ analysisOpenState[mod.id] = !isOpen; render(); };
+    modCard.appendChild(modHeader);
 
-  targets.forEach(st=>{
-    const yd = st.yearData[selectedYear];
-    const pd = yd ? yd[nineboxPeriod] : null;
-    if(!pd){ unclassified.push({staff:st, reason:"データなし"}); return; }
-    if(pd.exempt){ unclassified.push({staff:st, reason:"評価対象外"}); return; }
-    const months = computeTenureMonths(st.hireDate);
-    if(months === null){ unclassified.push({staff:st, reason:"入社日未登録"}); return; }
-    const pct = personalAchievementPct(st, pd.scores);
-    plotted.push({staff:st, months, pct});
+    if(isOpen){
+      const body = document.createElement("div");
+      body.style.marginTop = "16px";
+      body.appendChild(mod.render());
+      modCard.appendChild(body);
+    }
+    wrap.appendChild(modCard);
   });
-
-  const chartCard = document.createElement("div");
-  chartCard.className = "card";
-  if(plotted.length === 0){
-    chartCard.innerHTML = `<div class="empty">プロットできるデータがありません</div>`;
-  } else {
-    const svgWrap = document.createElement("div");
-    svgWrap.innerHTML = buildScatterSVG(plotted.map(p=>({months:p.months, pct:p.pct, label:p.staff.name})));
-    chartCard.appendChild(svgWrap);
-    const axisNote = document.createElement("div");
-    axisNote.style.cssText = "font-size:11px;color:var(--muted);margin-top:4px;";
-    axisNote.textContent = "横軸:勤続年数(右ほど長い) ・ 縦軸:達成率%(上ほど高い)";
-    chartCard.appendChild(axisNote);
-  }
-  wrap.appendChild(chartCard);
-
-  if(unclassified.length > 0){
-    const uCard = document.createElement("div");
-    uCard.className = "card";
-    uCard.innerHTML = `<div style="font-weight:800;margin-bottom:10px;">プロット対象外(${unclassified.length}名)</div>`;
-    const list = document.createElement("div");
-    list.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;";
-    unclassified.forEach(u=>{
-      const chip = document.createElement("span");
-      chip.style.cssText = "font-size:12px;padding:4px 10px;border-radius:20px;background:var(--gray-bg);color:var(--gray-ink);";
-      chip.textContent = `${u.staff.name}(${u.reason})`;
-      list.appendChild(chip);
-    });
-    uCard.appendChild(list);
-    wrap.appendChild(uCard);
-  }
 
   return wrap;
 }
