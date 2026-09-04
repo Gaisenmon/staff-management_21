@@ -275,6 +275,9 @@ function starCount(scores){
 function totalScore(periodData){
   return starCount(periodData.scores) + (periodData.bonus ?? 0);
 }
+function formatTotal(periodData){
+  return periodData.exempt ? "対象外" : String(totalScore(periodData));
+}
 function emptyScores(){
   const s = {};
   ALL_ITEMS.forEach(it => { s[it.name] = 0; });
@@ -282,7 +285,7 @@ function emptyScores(){
 }
 function emptyPeriods(){
   const p = {};
-  PERIODS.forEach(period => { p[period] = { scores: emptyScores(), comment:"", evaluator:"", bonus:0, confirmed:false }; });
+  PERIODS.forEach(period => { p[period] = { scores: emptyScores(), comment:"", evaluator:"", bonus:0, confirmed:false, exempt:false }; });
   return p;
 }
 
@@ -382,6 +385,11 @@ function migrateCoreState(s){
     if(!st.status){ st.status = st.active===false ? "resigned" : "active"; }
     if(st.isEvaluator === undefined){ st.isEvaluator = EVALUATOR_SEED_NAMES.includes(st.name); }
     if(st.hasLogin === undefined){ st.hasLogin = false; }
+    if(st.yearData){
+      Object.values(st.yearData).forEach(yd=>{
+        Object.values(yd).forEach(pd=>{ if(pd.exempt === undefined) pd.exempt = false; });
+      });
+    }
   });
   return s;
 }
@@ -663,6 +671,7 @@ function diffAndLog(staffObj, year, period, before, after){
   if((before.evaluator || "") !== (after.evaluator || "")) entries.push({field:"評価者", oldValue: before.evaluator || "(未選択)", newValue: after.evaluator || "(未選択)"});
   if((before.comment || "") !== (after.comment || "")) entries.push({field:"コメント", oldValue:"(変更前あり)", newValue:"(変更後あり)"});
   if(!!before.confirmed !== !!after.confirmed) entries.push({field:"ステータス", oldValue: before.confirmed ? "確定" : "編集中", newValue: after.confirmed ? "確定" : "編集中"});
+  if(!!before.exempt !== !!after.exempt) entries.push({field:"評価対象外", oldValue: before.exempt ? "対象外" : "対象内", newValue: after.exempt ? "対象外" : "対象内"});
   if(entries.length===0) return;
   const ts = new Date().toISOString();
   entries.forEach(e=>{
@@ -676,9 +685,10 @@ function diffAndLog(staffObj, year, period, before, after){
 
 /* ============================== タブ ============================== */
 const TABS = [
-  {id:"dashboard",  label:"ATS評価ダッシュボード"},
-  {id:"entry",      label:"ATS評価入力"},
+  {id:"dashboard",  label:"ATS評価-全体"},
   {id:"personal",   label:"ATS評価-個人"},
+  {id:"entry",      label:"ATS評価入力"},
+  {id:"ninebox",    label:"データ分析"},
   {id:"staffAdmin", label:"スタッフマスタ"},
   {id:"guideline",  label:"評価ガイドライン"},
   {id:"history",    label:"変更履歴"},
@@ -740,6 +750,7 @@ function applyDefaultYearAndPeriod(){
   dashboardPeriod = period;
   entrySelectedPeriod = period;
   personalChartPeriod = period;
+  nineboxPeriod = period;
 }
 
 /* ---------- パソコン/スマホ表示切り替え ---------- */
@@ -767,6 +778,7 @@ function render(){
   if(activeTab==="dashboard")  main.appendChild(renderDashboard());
   if(activeTab==="entry")      main.appendChild(renderEntry());
   if(activeTab==="personal")   main.appendChild(renderPersonal());
+  if(activeTab==="ninebox")    main.appendChild(renderNinebox());
   if(activeTab==="staffAdmin") main.appendChild(renderStaffAdmin());
   if(activeTab==="guideline")  main.appendChild(renderGuideline());
   if(activeTab==="history")    main.appendChild(renderHistory());
@@ -810,7 +822,7 @@ function renderDashboard(){
   titleRow.className = "title-row";
   const h = document.createElement("h2");
   h.className = "title";
-  h.textContent = `ATS評価ダッシュボード(${selectedYear}年度)`;
+  h.textContent = `ATS評価-全体(${selectedYear}年度)`;
   titleRow.appendChild(h);
 
   const filterBtns = document.createElement("div");
@@ -933,7 +945,7 @@ function renderDashboard(){
       rows.push([
         st.code, st.name, st.employType, st.affiliation, computeTenureText(st.hireDate), period.evaluator || "",
         ...ALL_ITEMS.map(it => period.scores[it.name] ?? 0),
-        period.bonus ?? 0, totalScore(period),
+        period.bonus ?? 0, formatTotal(period),
       ]);
     });
     downloadCSV(`ATS評価_${selectedYear}年度_${dashboardPeriod}.csv`, rows);
@@ -960,7 +972,7 @@ function renderDashboard(){
         return `<td><span class="score-cell ${cls}">${v}/${it.max}</span></td>`;
       }).join("")}
       <td>${period.bonus ?? 0}</td>
-      <td style="font-weight:800;color:var(--ember-dark);">${totalScore(period)}</td>
+      <td style="font-weight:800;color:${period.exempt ? "var(--gray-ink)" : "var(--ember-dark)"};">${formatTotal(period)}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -1017,6 +1029,8 @@ let entrySelectedId = null;
 let entryShowInactive = false;
 let entrySelectedPeriod = null; // 初回ロード時に自動設定
 let personalChartPeriod = null; // ATS評価-個人のレーダーチャート用(初回ロード時に自動設定)
+let nineboxPeriod = null; // 9BOXマップ用(初回ロード時に自動設定)
+let nineboxFilter = "all"; // all | hall | kitchen
 const CAT_CLASS = {kitchen:"cat-kitchen", hall:"cat-hall", special:"cat-special", shift:"cat-shift", attitude:"cat-attitude"};
 const editSnapshots = {}; // key: `${staffId}:${period}` -> 直近保存時点のperiodDataのコピー(履歴の差分計算用)
 function snapKey(staffId, period){ return `${staffId}:${period}`; }
@@ -1137,6 +1151,27 @@ function renderEntry(){
     evaluatorRow.appendChild(editBtn);
   }
   card.appendChild(evaluatorRow);
+
+  const exemptRow = document.createElement("label");
+  exemptRow.style.cssText = "display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--muted);margin-bottom:16px;cursor:pointer;";
+  const exemptCheck = document.createElement("input");
+  exemptCheck.type = "checkbox";
+  exemptCheck.checked = !!periodData.exempt;
+  exemptCheck.disabled = locked;
+  exemptCheck.onchange = ()=>{
+    editingForm = true;
+    periodData.exempt = exemptCheck.checked;
+    render();
+  };
+  exemptRow.appendChild(exemptCheck);
+  exemptRow.appendChild(document.createTextNode(`${entrySelectedPeriod}分は評価対象外にする(入社間もない等)`));
+  card.appendChild(exemptRow);
+  if(periodData.exempt){
+    const exemptBanner = document.createElement("div");
+    exemptBanner.style.cssText = "background:var(--gray-bg);color:var(--gray-ink);border-radius:8px;padding:10px 14px;font-size:13px;font-weight:700;margin-bottom:16px;";
+    exemptBanner.textContent = `この期間は「評価対象外」に設定されています。ATS評価-全体・データ分析などでは対象外として扱われます(点数入力自体は残せます)。`;
+    card.appendChild(exemptBanner);
+  }
 
   const tableWrap = document.createElement("div");
   tableWrap.className = "paper-table-wrap";
@@ -1288,6 +1323,63 @@ function storeAverageTotal(year, period){
   const sum = activeStaff.reduce((acc,s)=> acc + totalScore(s.yearData[year][period]), 0);
   return Math.round((sum / activeStaff.length) * 10) / 10;
 }
+
+/* ============================== 9BOXマップ用の計算 ============================== */
+/* その人の所属に関係する項目だけで達成率%を出す(達成度指標を作った時と同じ、所属を考慮した公平な計算方法) */
+function personalAchievementPct(staffObj, scores){
+  const relevant = ALL_ITEMS.filter(it => affiliationMatchesItem(staffObj.affiliation, it.categoryId));
+  if(relevant.length===0) return 0;
+  const sum = relevant.reduce((acc,it)=> acc + (scores[it.name] ?? 0)/it.max, 0);
+  return Math.round((sum/relevant.length)*1000)/10; // 小数第1位まで
+}
+/* 全年度・全期間を時系列順に並べたリスト({year,period}の配列)。年度またぎの推移計算に使う。 */
+function chronologicalPeriodList(){
+  const years = [...state.years].sort();
+  const list = [];
+  years.forEach(y=> PERIODS.forEach(p=> list.push({year:y, period:p})));
+  return list;
+}
+/* 指定の年度・時期までの、その人の達成率%の時系列(対象外の期間は除く)。 */
+function achievementSeriesUpTo(staffObj, targetYear, targetPeriod){
+  const all = chronologicalPeriodList();
+  const targetIdx = all.findIndex(x=>x.year===targetYear && x.period===targetPeriod);
+  if(targetIdx === -1) return [];
+  const series = [];
+  for(let i=0; i<=targetIdx; i++){
+    const {year, period} = all[i];
+    const yd = staffObj.yearData[year];
+    if(!yd || !yd[period]) continue;
+    const pd = yd[period];
+    if(pd.exempt) continue;
+    series.push(personalAchievementPct(staffObj, pd.scores));
+  }
+  return series;
+}
+/* 伸び率(縦軸):データ点が2つなら単純な差、3つ以上なら連続する差の平均(平均的な傾き)。
+   1つ以下(前期データが無い新人など)は判定不可としてnullを返す。 */
+function growthTrend(series){
+  if(series.length < 2) return null;
+  if(series.length === 2) return series[1] - series[0];
+  const diffs = [];
+  for(let i=1;i<series.length;i++) diffs.push(series[i]-series[i-1]);
+  return diffs.reduce((a,b)=>a+b,0) / diffs.length;
+}
+function bucketX(pct){ // 実績(横軸)
+  if(pct >= 66.7) return 2; // 高
+  if(pct >= 33.3) return 1; // 中
+  return 0; // 低
+}
+function bucketY(trend){ // 将来性(縦軸)。閾値は目安。±5ポイント以上の変化を「明確な変化」とみなす
+  if(trend > 5) return 2; // 上昇
+  if(trend >= -5) return 1; // 横ばい
+  return 0; // 下降
+}
+const NINEBOX_LABELS = [
+  // [横軸低, 横軸中, 横軸高] × 縦軸(低→高)
+  ["要改善",  "現状維持", "ベテラン"],
+  ["伸び悩み", "標準",    "主力"],
+  ["期待枠",  "好調",    "エース"],
+];
 function buildLineChartSVG(labels, seriesIndividual, seriesAvg, maxVal){
   const width=520, height=200, pad={top:16,right:16,bottom:26,left:30};
   const plotW = width-pad.left-pad.right, plotH = height-pad.top-pad.bottom;
@@ -1420,7 +1512,7 @@ function renderPersonal(){
 
   const summaryRows = [
     { label:"加点", render: pd => `<strong>${pd.bonus ?? 0}</strong>` },
-    { label:"合計点数", render: pd => `<strong style="color:var(--ember-dark);">${totalScore(pd)}</strong>` },
+    { label:"合計点数", render: pd => pd.exempt ? `<span style="color:var(--gray-ink);">対象外</span>` : `<strong style="color:var(--ember-dark);">${totalScore(pd)}</strong>` },
     { label:"評価者", render: pd => pd.evaluator || `<span style="color:var(--muted);">-</span>` },
     { label:"状態", render: pd => pd.confirmed
         ? `<span class="aff-chip" style="background:var(--green-bg);color:var(--green);">確定</span>`
@@ -1498,6 +1590,118 @@ function renderPersonal(){
 
   return wrap;
 }
+/* ============================== 9BOXマップ ============================== */
+function renderNinebox(){
+  const wrap = document.createElement("div");
+  const titleRow = document.createElement("div");
+  titleRow.className = "title-row";
+  const h = document.createElement("h2");
+  h.className = "title";
+  h.textContent = `データ分析(${selectedYear}年度)`;
+  titleRow.appendChild(h);
+
+  const filterBtns = document.createElement("div");
+  filterBtns.className = "btn-group";
+  [{id:"all",label:"全て"},{id:"hall",label:"ホール"},{id:"kitchen",label:"キッチン"}].forEach(f=>{
+    const b = document.createElement("button");
+    b.textContent = f.label;
+    b.className = nineboxFilter===f.id ? "active" : "";
+    b.onclick = ()=>{ nineboxFilter = f.id; render(); };
+    filterBtns.appendChild(b);
+  });
+  titleRow.appendChild(filterBtns);
+  wrap.appendChild(titleRow);
+  wrap.appendChild(renderPeriodButtons(nineboxPeriod, (p)=>{ nineboxPeriod = p; render(); }));
+
+  const explainCard = document.createElement("div");
+  explainCard.className = "card";
+  explainCard.innerHTML = `
+    <div style="font-size:12.5px;color:var(--muted);line-height:1.8;">
+      <strong>横軸</strong>:選んだ時期時点の達成率(所属に関係する項目だけで計算、所属を考慮した公平な指標)<br>
+      <strong>縦軸</strong>:直近の伸び率(データが2期分なら単純な差、3期分以上なら連続する差の平均=傾き)<br>
+      新人や「評価対象外」に設定されている期間は判定材料が無いため、下の「判定不可」に分けて表示しています。
+    </div>
+  `;
+  wrap.appendChild(explainCard);
+
+  const targets = state.staff.filter(s=> s.status==="active" && affiliationMatches(s.affiliation, nineboxFilter));
+  const classified = [];
+  const unclassified = [];
+
+  targets.forEach(st=>{
+    const yd = st.yearData[selectedYear];
+    const pd = yd ? yd[nineboxPeriod] : null;
+    if(!pd){ unclassified.push({staff:st, reason:"データなし"}); return; }
+    if(pd.exempt){ unclassified.push({staff:st, reason:"評価対象外"}); return; }
+    const series = achievementSeriesUpTo(st, selectedYear, nineboxPeriod);
+    if(series.length === 0){ unclassified.push({staff:st, reason:"データなし"}); return; }
+    const pct = series[series.length-1];
+    const trend = growthTrend(series);
+    if(trend === null){ unclassified.push({staff:st, reason:"前期データなし(初回評価)"}); return; }
+    classified.push({staff:st, x:bucketX(pct), y:bucketY(trend), pct, trend});
+  });
+
+  const gridCard = document.createElement("div");
+  gridCard.className = "card";
+  const grid = document.createElement("div");
+  grid.style.cssText = "display:grid;grid-template-columns:repeat(3,1fr);gap:10px;";
+  for(let yb=2; yb>=0; yb--){
+    for(let xb=0; xb<=2; xb++){
+      const cell = document.createElement("div");
+      cell.style.cssText = "border:1px solid var(--line);border-radius:10px;padding:10px;min-height:110px;background:var(--cream);";
+      const label = document.createElement("div");
+      label.style.cssText = "font-weight:800;font-size:11.5px;color:var(--ember-dark);margin-bottom:8px;";
+      label.textContent = NINEBOX_LABELS[yb][xb];
+      cell.appendChild(label);
+      const members = classified.filter(c=>c.x===xb && c.y===yb);
+      if(members.length===0){
+        const empty = document.createElement("div");
+        empty.style.cssText = "font-size:11px;color:var(--muted);";
+        empty.textContent = "該当なし";
+        cell.appendChild(empty);
+      } else {
+        members.forEach(m=>{
+          const chip = document.createElement("div");
+          chip.style.cssText = "font-size:12px;font-weight:700;padding:4px 8px;background:#fff;border-radius:6px;margin-bottom:4px;border:1px solid var(--line);";
+          const trendStr = (m.trend>=0?"+":"") + (Math.round(m.trend*10)/10);
+          chip.title = `達成率 ${m.pct}% ・ 伸び ${trendStr}pt`;
+          chip.textContent = m.staff.name;
+          cell.appendChild(chip);
+        });
+      }
+      grid.appendChild(cell);
+    }
+  }
+  gridCard.appendChild(grid);
+  const axisNote = document.createElement("div");
+  axisNote.style.cssText = "display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:10px;";
+  axisNote.innerHTML = `<span>← 実績 低い</span><span style="margin-left:auto;">実績 高い →</span>`;
+  gridCard.appendChild(axisNote);
+  const axisNote2 = document.createElement("div");
+  axisNote2.style.cssText = "font-size:11px;color:var(--muted);margin-top:4px;";
+  axisNote2.textContent = "縦方向は下から上に「伸び 下降→横ばい→上昇」";
+  gridCard.appendChild(axisNote2);
+  wrap.appendChild(gridCard);
+
+  if(unclassified.length > 0){
+    const uCard = document.createElement("div");
+    uCard.className = "card";
+    uCard.innerHTML = `<div style="font-weight:800;margin-bottom:10px;">判定不可(${unclassified.length}名)</div>`;
+    const list = document.createElement("div");
+    list.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;";
+    unclassified.forEach(u=>{
+      const chip = document.createElement("span");
+      chip.style.cssText = "font-size:12px;padding:4px 10px;border-radius:20px;background:var(--gray-bg);color:var(--gray-ink);";
+      chip.textContent = `${u.staff.name}(${u.reason})`;
+      list.appendChild(chip);
+    });
+    uCard.appendChild(list);
+    wrap.appendChild(uCard);
+  }
+
+  return wrap;
+}
+
 function renderStaffAdmin(){
   const wrap = document.createElement("div");
   const h = document.createElement("h2");
@@ -1585,8 +1789,8 @@ function renderStaffAdmin(){
         const msg = nextStatus==="active"
           ? `${st.name}さんを在籍に戻します。`
           : nextStatus==="resigned"
-          ? `${st.name}さんを退職にします。過去の評価データは残りますが、ダッシュボード・評価入力の対象一覧からは初期状態で除外されます。`
-          : `${st.name}さんを休職にします。ダッシュボード・評価入力の対象一覧からは初期状態で除外されます(データは残ります)。`;
+          ? `${st.name}さんを退職にします。過去の評価データは残りますが、ATS評価-全体・評価入力の対象一覧からは初期状態で除外されます。`
+          : `${st.name}さんを休職にします。ATS評価-全体・評価入力の対象一覧からは初期状態で除外されます(データは残ります)。`;
         showModal(msg, ()=>{
           st.status = nextStatus;
           saveState();
