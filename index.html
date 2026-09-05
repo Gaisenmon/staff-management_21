@@ -1044,38 +1044,58 @@ function renderDashboard(){
 
 /* ---------- ATS評価入力(紙の評価票と同じ表レイアウト・4期間分の履歴を保持) ---------- */
 let entrySelectedId = null;
-let staffDatalistCounter = 0;
-/* 名前で絞り込める検索欄(input+datalist)。プルダウンだと人数が多い時に探しづらいための代替。 */
+/* 名前で絞り込める検索欄。プルダウンだと人数が多い時に探しづらいための代替。
+   input+datalistではなく自前でドロップダウンパネルを描画している(iOS Safariでdatalistの候補が
+   ほぼ表示されない/不安定という問題があるため、どの端末でも同じ見た目・動きになるようにした)。 */
 function buildStaffSearchInput(visibleStaff, selectedId, onSelect){
   const STATUS_LABEL = {active:"", leave:"(休職)", resigned:"(退職)"};
   const labelFor = s => `${s.name}${STATUS_LABEL[s.status]||""}`;
-  const listId = "staff-datalist-" + (staffDatalistCounter++);
+  const box = document.createElement("div");
+  box.style.cssText = "position:relative;flex:1;";
   const input = document.createElement("input");
   input.type = "text";
-  input.setAttribute("list", listId);
   input.placeholder = "名前で検索...";
   input.autocomplete = "off";
-  const datalist = document.createElement("datalist");
-  datalist.id = listId;
-  visibleStaff.forEach(s=>{
-    const opt = document.createElement("option");
-    opt.value = labelFor(s);
-    datalist.appendChild(opt);
-  });
   const current = visibleStaff.find(s=>s.id===selectedId);
   input.value = current ? labelFor(current) : "";
-  input.onchange = ()=>{
-    const match = visibleStaff.find(s=> labelFor(s) === input.value);
-    if(match){
-      onSelect(match.id);
-    } else {
-      input.value = current ? labelFor(current) : ""; // 一致しない入力は元に戻す
-    }
-  };
-  const box = document.createElement("div");
-  box.style.flex = "1";
   box.appendChild(input);
-  box.appendChild(datalist);
+
+  const panel = document.createElement("div");
+  panel.style.cssText = "position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--line);border-radius:8px;margin-top:4px;max-height:260px;overflow-y:auto;z-index:30;box-shadow:0 8px 24px rgba(0,0,0,0.14);display:none;";
+  box.appendChild(panel);
+
+  function renderPanel(filterText){
+    const q = (filterText||"").trim().toLowerCase();
+    const matches = visibleStaff.filter(s=> !q || labelFor(s).toLowerCase().includes(q));
+    panel.innerHTML = "";
+    if(matches.length===0){
+      const empty = document.createElement("div");
+      empty.style.cssText = "padding:10px 14px;color:var(--muted);font-size:13px;";
+      empty.textContent = "該当するスタッフがいません";
+      panel.appendChild(empty);
+    } else {
+      matches.forEach(s=>{
+        const item = document.createElement("div");
+        item.textContent = labelFor(s);
+        item.style.cssText = "padding:9px 14px;font-size:13.5px;cursor:pointer;";
+        item.onmouseenter = ()=>{ item.style.background = "var(--cream)"; };
+        item.onmouseleave = ()=>{ item.style.background = ""; };
+        // blurより先に発火させたいのでmousedownで拾う(タッチ操作でも同様に発火する)
+        item.onmousedown = (e)=>{
+          e.preventDefault();
+          input.value = labelFor(s);
+          panel.style.display = "none";
+          onSelect(s.id);
+        };
+        panel.appendChild(item);
+      });
+    }
+    panel.style.display = "block";
+  }
+
+  input.oninput = ()=> renderPanel(input.value);
+  input.onfocus = ()=>{ input.select(); renderPanel(""); };
+  input.onblur = ()=>{ setTimeout(()=>{ panel.style.display = "none"; }, 120); };
   return box;
 }
 let entryShowInactive = false;
@@ -1328,7 +1348,8 @@ function renderEntry(){
       }, {confirmLabel:"確定する"});
     };
     const saveNextBtn = document.createElement("button");
-    saveNextBtn.className = "ghost";
+    saveNextBtn.className = "primary";
+    saveNextBtn.style.background = "var(--muted)";
     saveNextBtn.textContent = "保存して次のスタッフへ";
     saveNextBtn.onclick = ()=>{
       editingForm = false;
@@ -1519,10 +1540,14 @@ function renderPersonal(){
   pickerRow.appendChild(printBtn);
   picker.appendChild(pickerRow);
   card.appendChild(picker);
+  wrap.appendChild(card);
 
   const staffObj = state.staff.find(s=>s.id===entrySelectedId);
-  if(!staffObj){ wrap.appendChild(card); return wrap; }
+  if(!staffObj){ return wrap; }
   if(!staffObj.yearData[selectedYear]) staffObj.yearData[selectedYear] = emptyPeriods();
+
+  const reportCard = document.createElement("div");
+  reportCard.className = "card";
 
   const meta = document.createElement("div");
   meta.className = "meta-row";
@@ -1532,7 +1557,7 @@ function renderPersonal(){
     <span>所属: <strong>${staffObj.affiliation}</strong></span>
     <span>勤続: <strong>${computeTenureText(staffObj.hireDate)}</strong></span>
   `;
-  card.appendChild(meta);
+  reportCard.appendChild(meta);
 
   const tableWrap = document.createElement("div");
   tableWrap.className = "table-wrap";
@@ -1589,7 +1614,7 @@ function renderPersonal(){
 
   table.appendChild(tbody);
   tableWrap.appendChild(table);
-  card.appendChild(tableWrap);
+  reportCard.appendChild(tableWrap);
 
   const commentWrap = document.createElement("div");
   commentWrap.style.cssText = "margin-top:18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;";
@@ -1600,8 +1625,8 @@ function renderPersonal(){
     box.innerHTML = `<div style="font-size:11.5px;font-weight:800;color:var(--muted);margin-bottom:4px;">${p}のコメント</div><div style="font-size:13px;white-space:pre-wrap;">${pd.comment ? pd.comment.replace(/</g,"&lt;") : '<span style="color:var(--muted);">(なし)</span>'}</div>`;
     commentWrap.appendChild(box);
   });
-  card.appendChild(commentWrap);
-  wrap.appendChild(card);
+  reportCard.appendChild(commentWrap);
+  wrap.appendChild(reportCard);
 
   // 推移グラフ + 店舗平均とのレーダーチャート比較
   const chartCard = document.createElement("div");
