@@ -151,6 +151,14 @@
   button.primary:hover{background:var(--ember-dark);}
   .save-toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--charcoal);color:#fff;padding:10px 20px;border-radius:30px;font-size:13px;font-weight:700;opacity:0;transition:.25s;pointer-events:none;z-index:50;}
   .save-toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+  /* 印刷 / PDF保存用。個人タブの「印刷 / PDF保存」ボタンから window.print() を呼ぶ想定 */
+  @media print{
+    header, .save-toast, .no-print{display:none !important;}
+    body{background:#fff !important;}
+    main{padding:0 !important;max-width:none !important;margin:0 !important;}
+    .card{border:none !important;box-shadow:none !important;break-inside:avoid;padding:8px 0 !important;}
+  }
   .sync-row{display:flex;align-items:center;gap:10px;margin-bottom:12px;font-size:11px;color:#C8BBA8;}
   .sync-dot{width:8px;height:8px;border-radius:50%;background:#5EA36B;flex:none;}
   .sync-dot.off{background:#B23A2E;}
@@ -1036,6 +1044,40 @@ function renderDashboard(){
 
 /* ---------- ATS評価入力(紙の評価票と同じ表レイアウト・4期間分の履歴を保持) ---------- */
 let entrySelectedId = null;
+let staffDatalistCounter = 0;
+/* 名前で絞り込める検索欄(input+datalist)。プルダウンだと人数が多い時に探しづらいための代替。 */
+function buildStaffSearchInput(visibleStaff, selectedId, onSelect){
+  const STATUS_LABEL = {active:"", leave:"(休職)", resigned:"(退職)"};
+  const labelFor = s => `${s.name}${STATUS_LABEL[s.status]||""}`;
+  const listId = "staff-datalist-" + (staffDatalistCounter++);
+  const input = document.createElement("input");
+  input.type = "text";
+  input.setAttribute("list", listId);
+  input.placeholder = "名前で検索...";
+  input.autocomplete = "off";
+  const datalist = document.createElement("datalist");
+  datalist.id = listId;
+  visibleStaff.forEach(s=>{
+    const opt = document.createElement("option");
+    opt.value = labelFor(s);
+    datalist.appendChild(opt);
+  });
+  const current = visibleStaff.find(s=>s.id===selectedId);
+  input.value = current ? labelFor(current) : "";
+  input.onchange = ()=>{
+    const match = visibleStaff.find(s=> labelFor(s) === input.value);
+    if(match){
+      onSelect(match.id);
+    } else {
+      input.value = current ? labelFor(current) : ""; // 一致しない入力は元に戻す
+    }
+  };
+  const box = document.createElement("div");
+  box.style.flex = "1";
+  box.appendChild(input);
+  box.appendChild(datalist);
+  return box;
+}
 let entryShowInactive = false;
 let entrySelectedPeriod = null; // 初回ロード時に自動設定
 let personalChartPeriod = null; // ATS評価-個人のレーダーチャート用(初回ロード時に自動設定)
@@ -1060,15 +1102,10 @@ function renderEntry(){
   picker.innerHTML = `<label>対象スタッフ</label>`;
   const pickerRow = document.createElement("div");
   pickerRow.style.cssText = "display:flex;gap:10px;align-items:center;";
-  const sel = document.createElement("select");
-  sel.style.flex = "1";
   const STATUS_LABEL = {active:"", leave:"(休職)", resigned:"(退職)"};
   const visibleStaff = state.staff.filter(s => s.isEvaluatee && (entryShowInactive || s.status==="active"));
-  sel.innerHTML = visibleStaff.map(s=>`<option value="${s.id}">${s.name}${STATUS_LABEL[s.status]||""}</option>`).join("");
   if(!entrySelectedId || !visibleStaff.some(s=>s.id===entrySelectedId)) entrySelectedId = visibleStaff[0]?.id;
-  sel.value = entrySelectedId;
-  sel.onchange = ()=>{ entrySelectedId = sel.value; render(); };
-  pickerRow.appendChild(sel);
+  pickerRow.appendChild(buildStaffSearchInput(visibleStaff, entrySelectedId, (id)=>{ entrySelectedId = id; render(); }));
   const inactiveLabel = document.createElement("label");
   inactiveLabel.style.cssText = "display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);font-weight:700;white-space:nowrap;";
   const inactiveCheck = document.createElement("input");
@@ -1290,6 +1327,21 @@ function renderEntry(){
         render();
       }, {confirmLabel:"確定する"});
     };
+    const saveNextBtn = document.createElement("button");
+    saveNextBtn.className = "ghost";
+    saveNextBtn.textContent = "保存して次のスタッフへ";
+    saveNextBtn.onclick = ()=>{
+      editingForm = false;
+      diffAndLog(staffObj, selectedYear, entrySelectedPeriod, editSnapshots[key], periodData);
+      editSnapshots[key] = clonePeriod(periodData);
+      saveState();
+      const idx = visibleStaff.findIndex(s=>s.id===entrySelectedId);
+      if(idx !== -1 && idx < visibleStaff.length-1){
+        entrySelectedId = visibleStaff[idx+1].id;
+      }
+      render();
+    };
+    saveRow.appendChild(saveNextBtn);
     saveRow.appendChild(saveBtn);
     saveRow.appendChild(confirmBtn);
     card.appendChild(saveRow);
@@ -1449,21 +1501,22 @@ function renderPersonal(){
   wrap.appendChild(h);
 
   const card = document.createElement("div");
-  card.className = "card";
+  card.className = "card no-print";
   const picker = document.createElement("div");
   picker.className = "staff-picker";
   picker.innerHTML = `<label>対象スタッフ</label>`;
   const pickerRow = document.createElement("div");
   pickerRow.style.cssText = "display:flex;gap:10px;align-items:center;";
-  const sel = document.createElement("select");
-  sel.style.flex = "1";
   const STATUS_LABEL = {active:"", leave:"(休職)", resigned:"(退職)"};
   const visibleStaff = state.staff.filter(s => s.isEvaluatee && (entryShowInactive || s.status==="active"));
-  sel.innerHTML = visibleStaff.map(s=>`<option value="${s.id}">${s.name}${STATUS_LABEL[s.status]||""}</option>`).join("");
   if(!entrySelectedId || !visibleStaff.some(s=>s.id===entrySelectedId)) entrySelectedId = visibleStaff[0]?.id;
-  sel.value = entrySelectedId;
-  sel.onchange = ()=>{ entrySelectedId = sel.value; render(); };
-  pickerRow.appendChild(sel);
+  pickerRow.appendChild(buildStaffSearchInput(visibleStaff, entrySelectedId, (id)=>{ entrySelectedId = id; render(); }));
+  const printBtn = document.createElement("button");
+  printBtn.className = "ghost";
+  printBtn.textContent = "印刷 / PDF保存";
+  printBtn.style.flex = "none";
+  printBtn.onclick = ()=> window.print();
+  pickerRow.appendChild(printBtn);
   picker.appendChild(pickerRow);
   card.appendChild(picker);
 
