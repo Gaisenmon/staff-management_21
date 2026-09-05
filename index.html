@@ -1613,7 +1613,7 @@ function itemStarHolders(item, year, period){
     const pd = yd ? yd[period] : null;
     if(!pd || pd.exempt) return;
     const v = pd.scores[item.name] ?? 0;
-    if(v >= starAt(item.max)) holders.push(s);
+    if(v >= starAt(item.max)) holders.push({staff:s, score:v, isPerfect: v>=item.max});
   });
   return { holders, relevantCount: relevantStaff.length };
 }
@@ -1675,18 +1675,14 @@ const ANALYSIS_MODULES = [
     label: "⭐️保持者数",
     render(){
       const container = document.createElement("div");
-      const note = document.createElement("div");
-      note.style.cssText = "font-size:11.5px;color:var(--muted);margin-bottom:10px;";
-      note.textContent = "対象人数に対する★保持者の割合が低い順に並べています(「少ない」の基準は設けていないので、ご自身の目安で判断してください)。";
-      container.appendChild(note);
 
-      const rows = ALL_ITEMS
+      const rows = OPERATION_ITEMS
         .filter(it => itemVisibleForFilter(it, nineboxFilter))
         .map(it => {
           const { holders, relevantCount } = itemStarHolders(it, selectedYear, nineboxPeriod);
           return { item: it, holders, relevantCount };
         })
-        .filter(r => r.relevantCount > 0) // 対象者が誰もいない項目(社員専用項目など)は表示しない
+        .filter(r => r.relevantCount > 0)
         .sort((a,b)=> (a.holders.length/a.relevantCount) - (b.holders.length/b.relevantCount));
 
       if(rows.length === 0){
@@ -1700,8 +1696,13 @@ const ANALYSIS_MODULES = [
         const row = document.createElement("div");
         row.style.cssText = "display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);";
         const left = document.createElement("div");
+        const namesHTML = r.holders.map(h=>
+          h.isPerfect
+            ? `<span style="color:var(--gold);font-weight:800;">${h.staff.name}</span>`
+            : `<span>${h.staff.name}</span>`
+        ).join("、");
         left.innerHTML = `<div style="font-weight:800;font-size:13.5px;">${r.item.name} <span style="font-size:11px;color:var(--muted);font-weight:400;">(${catLabel})</span></div>` +
-          (r.holders.length>0 ? `<div style="font-size:12px;color:var(--muted);margin-top:3px;">できる人:${r.holders.map(h=>h.name).join("、")}</div>` : "");
+          (r.holders.length>0 ? `<div style="font-size:12px;color:var(--muted);margin-top:3px;">できる人:${namesHTML}</div>` : "");
         row.appendChild(left);
         const badge = document.createElement("span");
         badge.style.cssText = isZero
