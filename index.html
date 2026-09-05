@@ -249,10 +249,10 @@ const CATEGORIES = [
     {name:"オンリー", max:4},{name:"ドリンカー", max:4},{name:"出し", max:4},{name:"ご案内・電話", max:4},{name:"レジ", max:4},
   ]},
   { id:"special",  label:"③特殊技能",   items:[
-    {name:"夜集計", max:4},{name:"予約管理", max:5},{name:"従業員統率", max:5},{name:"肉カット", max:5},{name:"教育・評価", max:3},
+    {name:"夜集計", max:4},{name:"予約管理", max:5},{name:"従業員統率", max:5},{name:"肉カット", max:5, employTypeOnly:["社員"]},{name:"教育・評価", max:3},
   ]},
   { id:"shift",    label:"④シフト協力", items:[
-    {name:"シフト作成", max:5},{name:"土日祝60%／月", max:1},{name:"イベント参加", max:1},{name:"不足協力", max:1},{name:"長期繁忙期70%", max:1},
+    {name:"シフト作成", max:5, employTypeOnly:["社員"]},{name:"土日祝60%／月", max:1},{name:"イベント参加", max:1},{name:"不足協力", max:1},{name:"長期繁忙期70%", max:1},
   ]},
   { id:"attitude", label:"⑤勤務態度",   items:[
     {name:"遅刻・欠勤", max:1},{name:"シフト提出", max:1},{name:"服務規律", max:1},{name:"姿勢のルール", max:1},{name:"行事参加", max:1},
@@ -1319,9 +1319,16 @@ function affiliationMatchesItem(staffAffiliation, categoryId){
   if(categoryId === "kitchen") return staffAffiliation === "キッチン" || staffAffiliation === "両方";
   return true;
 }
+/* 所属に加えて、項目側の「社員専用」等の指定(employTypeOnly)も考慮する。
+   肉カット・シフト作成のように、原則社員の仕事であってアルバイト・パートには
+   そもそも割り当てられない項目を、達成率や★保持者数の計算から正しく除外するため。 */
+function itemAppliesToStaff(item, staffObj){
+  if(item.employTypeOnly && !item.employTypeOnly.includes(staffObj.employType)) return false;
+  return affiliationMatchesItem(staffObj.affiliation, item.categoryId);
+}
 function storeItemAvgPct(year, period, item){
   const relevantStaff = state.staff.filter(s=>
-    s.isEvaluatee && s.status==="active" && s.yearData[year] && affiliationMatchesItem(s.affiliation, item.categoryId)
+    s.isEvaluatee && s.status==="active" && s.yearData[year] && itemAppliesToStaff(item, s)
   );
   if(relevantStaff.length===0) return 0;
   const sum = relevantStaff.reduce((acc,s)=> acc + ((s.yearData[year][period].scores[item.name] ?? 0) / item.max * 100), 0);
@@ -1337,7 +1344,7 @@ function storeAverageTotal(year, period){
 /* ============================== データ分析(勤続 × 達成率の散布図) ============================== */
 /* その人の所属に関係する項目(①②③のオペレーション15項目)だけで達成率%を出す */
 function personalAchievementPct(staffObj, scores){
-  const relevant = OPERATION_ITEMS.filter(it => affiliationMatchesItem(staffObj.affiliation, it.categoryId));
+  const relevant = OPERATION_ITEMS.filter(it => itemAppliesToStaff(it, staffObj));
   if(relevant.length===0) return 0;
   const sum = relevant.reduce((acc,it)=> acc + (scores[it.name] ?? 0)/it.max, 0);
   return Math.round((sum/relevant.length)*1000)/10; // 小数第1位まで
@@ -1594,9 +1601,11 @@ function renderPersonal(){
 }
 /* ============================== 9BOXマップ ============================== */
 /* その項目に関係する所属の在籍・被評価者のうち、★基準を満たしている人を返す(単一障害点検出用) */
+/* その項目に関係する所属・雇用区分の在籍・被評価者のうち、★基準を満たしている人を返す(単一障害点検出用)。
+   対象母数(relevantCount)も一緒に返す:保持者数だけでなく「対象が何人中何人か」を見るため。 */
 function itemStarHolders(item, year, period){
   const relevantStaff = state.staff.filter(s=>
-    s.isEvaluatee && s.status==="active" && affiliationMatchesItem(s.affiliation, item.categoryId)
+    s.isEvaluatee && s.status==="active" && itemAppliesToStaff(item, s)
   );
   const holders = [];
   relevantStaff.forEach(s=>{
@@ -1606,7 +1615,7 @@ function itemStarHolders(item, year, period){
     const v = pd.scores[item.name] ?? 0;
     if(v >= starAt(item.max)) holders.push(s);
   });
-  return holders;
+  return { holders, relevantCount: relevantStaff.length };
 }
 /* ページ上部の全て/ホール/キッチンの絞り込みを、項目の表示可否として流用する */
 function itemVisibleForFilter(item, filter){
@@ -1663,27 +1672,31 @@ const ANALYSIS_MODULES = [
   },
   {
     id: "busFactor",
-    label: "★保持者数",
+    label: "⭐️保持者数",
     render(){
       const container = document.createElement("div");
-      const RISK_META = {
-        0: {label:"危機的", bg:"#FBE4E1", color:"#B23A2E"},
-        1: {label:"高リスク", bg:"var(--amber-bg)", color:"var(--amber)"},
-        2: {label:"要注意", bg:"var(--gray-bg)", color:"var(--gray-ink)"},
-      };
+      const note = document.createElement("div");
+      note.style.cssText = "font-size:11.5px;color:var(--muted);margin-bottom:10px;";
+      note.textContent = "対象人数に対する★保持者の割合が低い順に並べています(「少ない」の基準は設けていないので、ご自身の目安で判断してください)。";
+      container.appendChild(note);
+
       const rows = ALL_ITEMS
         .filter(it => itemVisibleForFilter(it, nineboxFilter))
-        .map(it => ({ item: it, holders: itemStarHolders(it, selectedYear, nineboxPeriod) }))
-        .filter(r => r.holders.length <= 2)
-        .sort((a,b)=> a.holders.length - b.holders.length);
+        .map(it => {
+          const { holders, relevantCount } = itemStarHolders(it, selectedYear, nineboxPeriod);
+          return { item: it, holders, relevantCount };
+        })
+        .filter(r => r.relevantCount > 0) // 対象者が誰もいない項目(社員専用項目など)は表示しない
+        .sort((a,b)=> (a.holders.length/a.relevantCount) - (b.holders.length/b.relevantCount));
 
       if(rows.length === 0){
-        container.innerHTML = `<div class="empty">該当する項目はありません(表示中の項目は全て★保持者が3人以上います)</div>`;
+        container.innerHTML += `<div class="empty">対象データがありません</div>`;
         return container;
       }
       rows.forEach(r=>{
-        const meta = RISK_META[r.holders.length];
         const catLabel = CATEGORIES.find(c=>c.id===r.item.categoryId)?.label ?? "";
+        const pct = Math.round((r.holders.length / r.relevantCount) * 100);
+        const isZero = r.holders.length === 0;
         const row = document.createElement("div");
         row.style.cssText = "display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);";
         const left = document.createElement("div");
@@ -1691,8 +1704,10 @@ const ANALYSIS_MODULES = [
           (r.holders.length>0 ? `<div style="font-size:12px;color:var(--muted);margin-top:3px;">できる人:${r.holders.map(h=>h.name).join("、")}</div>` : "");
         row.appendChild(left);
         const badge = document.createElement("span");
-        badge.style.cssText = `flex:none;font-size:11.5px;font-weight:800;padding:3px 10px;border-radius:20px;background:${meta.bg};color:${meta.color};white-space:nowrap;`;
-        badge.textContent = `${meta.label}(${r.holders.length}人)`;
+        badge.style.cssText = isZero
+          ? "flex:none;font-size:11.5px;font-weight:800;padding:3px 10px;border-radius:20px;background:#FBE4E1;color:#B23A2E;white-space:nowrap;"
+          : "flex:none;font-size:11.5px;font-weight:800;padding:3px 10px;border-radius:20px;background:var(--gray-bg);color:var(--gray-ink);white-space:nowrap;";
+        badge.textContent = isZero ? `該当者なし(対象${r.relevantCount}人)` : `${r.holders.length}人 / 対象${r.relevantCount}人(${pct}%)`;
         row.appendChild(badge);
         container.appendChild(row);
       });
