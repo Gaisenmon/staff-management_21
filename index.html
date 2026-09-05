@@ -157,7 +157,10 @@
     header, .save-toast, .no-print{display:none !important;}
     body{background:#fff !important;}
     main{padding:0 !important;max-width:none !important;margin:0 !important;}
-    .card{border:none !important;box-shadow:none !important;break-inside:avoid;padding:8px 0 !important;}
+    .card{border:none !important;box-shadow:none !important;padding:4px 0 !important;margin-bottom:4px !important;}
+    table{break-inside:auto;}
+    tr{break-inside:avoid;}
+    thead{display:table-header-group;} /* 表が複数ページにまたがる時、見出し行を各ページの先頭に繰り返す */
   }
   .sync-row{display:flex;align-items:center;gap:10px;margin-bottom:12px;font-size:11px;color:#C8BBA8;}
   .sync-dot{width:8px;height:8px;border-radius:50%;background:#5EA36B;flex:none;}
