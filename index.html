@@ -216,6 +216,7 @@
 </div>
 <div class="save-toast" id="toast">保存しました</div>
 
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script type="module">
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getDatabase, ref, set, get, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
@@ -710,6 +711,7 @@ const TABS = [
   {id:"personal",   label:"ATS評価-個人"},
   {id:"entry",      label:"ATS評価入力"},
   {id:"ninebox",    label:"データ分析"},
+  {id:"shifts",     label:"シフトデータ"},
   {id:"staffAdmin", label:"スタッフマスタ"},
   {id:"guideline",  label:"評価ガイドライン"},
   {id:"history",    label:"変更履歴"},
@@ -800,6 +802,7 @@ function render(){
   if(activeTab==="entry")      main.appendChild(renderEntry());
   if(activeTab==="personal")   main.appendChild(renderPersonal());
   if(activeTab==="ninebox")    main.appendChild(renderNinebox());
+  if(activeTab==="shifts")     main.appendChild(renderShifts());
   if(activeTab==="staffAdmin") main.appendChild(renderStaffAdmin());
   if(activeTab==="guideline")  main.appendChild(renderGuideline());
   if(activeTab==="history")    main.appendChild(renderHistory());
@@ -1799,6 +1802,102 @@ const ANALYSIS_MODULES = [
 ];
 const analysisOpenState = {}; // {[moduleId]: boolean} 未設定(undefined)は「開いている」扱い
 
+/* シフト×スキル充足チェック。データ分析タブではなくシフトデータタブに表示する。
+   開店準備(9-10時)・閉店後片付け(22時)は営業時間外の作業なのでチェック対象から除外する。 */
+const SKILL_CHECK_EXCLUDED_HOURS = [9, 10, 22];
+function renderShiftSkillCheck(date){
+  const container = document.createElement("div");
+  const title = document.createElement("div");
+  title.style.cssText = "font-weight:800;font-size:15px;margin-bottom:4px;";
+  title.textContent = "シフト×スキル充足チェック";
+  container.appendChild(title);
+
+  const shiftData = shiftDataCache[date];
+  if(!shiftData){
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = `${date}のシフトデータがまだありません`;
+    container.appendChild(empty);
+    return container;
+  }
+
+  const norm = s => s.replace(/\s+/g,"");
+  const staffSegments = shiftData.staff.map(s=>{
+    const match = state.staff.find(st=> norm(st.name) === norm(s.name));
+    const segs = (s.segments||[]).map(seg=>({
+      label: seg.label,
+      startMin: timeStrToMinutes(seg.start),
+      endMin: timeStrToMinutes(seg.end),
+    })).filter(seg=> seg.startMin!==null && seg.endMin!==null);
+    return { name: s.name, staffObj: match, segments: segs };
+  });
+
+  let minHour = Infinity, maxHour = -Infinity;
+  staffSegments.forEach(s=> s.segments.forEach(seg=>{
+    minHour = Math.min(minHour, Math.floor(seg.startMin/60));
+    maxHour = Math.max(maxHour, Math.ceil(seg.endMin/60));
+  }));
+  if(!isFinite(minHour)){
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = "この日は誰も勤務していません";
+    container.appendChild(empty);
+    return container;
+  }
+
+  const CATS = [
+    { label:"ホール", items: CATEGORIES.find(c=>c.id==="hall").items },
+    { label:"キッチン", items: CATEGORIES.find(c=>c.id==="kitchen").items },
+  ];
+
+  const findings = [];
+  for(let h=minHour; h<maxHour; h++){
+    if(SKILL_CHECK_EXCLUDED_HOURS.includes(h % 24)) continue; // 開店準備・閉店後片付けは対象外
+    const hStart = h*60, hEnd = h*60+60;
+    CATS.forEach(cat=>{
+      const present = staffSegments.filter(s=> s.segments.some(seg=> seg.label===cat.label && seg.startMin < hEnd && seg.endMin > hStart));
+      if(present.length === 0) return;
+      cat.items.forEach(item=>{
+        const holderCount = present.filter(s=>{
+          if(!s.staffObj) return false;
+          const yd = s.staffObj.yearData[selectedYear];
+          const pd = yd ? yd[nineboxPeriod] : null;
+          if(!pd || pd.exempt) return false;
+          const v = pd.scores[item.name] ?? 0;
+          return v >= starAt(item.max);
+        }).length;
+        if(holderCount === 0){
+          findings.push({ hour:h, catLabel:cat.label, itemName:item.name, presentNames: present.map(s=>s.name) });
+        }
+      });
+    });
+  }
+
+  const explain = document.createElement("div");
+  explain.style.cssText = "font-size:11.5px;color:var(--muted);margin:6px 0 12px;";
+  explain.textContent = `${selectedYear}年度${nineboxPeriod}分の評価データをもとに判定しています(開店準備・閉店後片付けの時間帯は対象外)。`;
+  container.appendChild(explain);
+
+  if(findings.length === 0){
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = "検出された不足はありません";
+    container.appendChild(empty);
+    return container;
+  }
+
+  findings.sort((a,b)=> a.hour - b.hour);
+  findings.forEach(f=>{
+    const row = document.createElement("div");
+    row.style.cssText = "padding:10px 4px;border-bottom:1px solid var(--line);";
+    row.innerHTML = `<div style="font-weight:800;font-size:13px;">${hourLabel(f.hour)} ・ ${f.catLabel} ・ <span style="color:#B23A2E;">${f.itemName}ができる人が0人</span></div><div style="font-size:12px;color:var(--muted);margin-top:3px;">配置されている人:${f.presentNames.join("、")}</div>`;
+    container.appendChild(row);
+  });
+
+  return container;
+}
+
+
 function renderNinebox(){
   const wrap = document.createElement("div");
   const titleRow = document.createElement("div");
@@ -1847,6 +1946,225 @@ function renderNinebox(){
     }
     wrap.appendChild(modCard);
   });
+
+  return wrap;
+}
+
+/* ============================== シフトデータ ==============================
+   「日別シフト」形式のExcel(1日分)を取り込む。このシートは文字ではなく
+   セルの塗りつぶし色で「誰が・いつ・何(ホール/キッチン/休憩等)をしているか」を
+   表現しているため、色を凡例(シート内のC列ラベル+B列の色)と照合して読み取る。
+   凡例はシートから毎回動的に読み取るので、色の意味が変わっても追従できる。 */
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+let shiftSelectedDate = todayISO();
+let shiftUploadStatus = null;
+let shiftDataCache = {}; // {date: パース済みデータ|null(未取込確認済み)}
+let shiftFetchInFlight = {};
+/* シフトデータを(未取得なら)Firebaseから取り込んでキャッシュする共通処理。
+   シフトデータタブ・データ分析タブの両方から使う。 */
+function ensureShiftDataLoaded(date){
+  if(!(date in shiftDataCache) && !shiftFetchInFlight[date]){
+    shiftFetchInFlight[date] = true;
+    get(ref(db, `stores/${STORE_ID}/shifts/${date}`)).then(snap=>{
+      shiftDataCache[date] = snap.exists() ? snap.val() : null;
+      delete shiftFetchInFlight[date];
+      render();
+    }).catch(()=>{ delete shiftFetchInFlight[date]; });
+  }
+}
+/* "HH:MM" または "HH:MM(翌)" を、その日の0:00からの分数に変換する(翌日分は+1440) */
+function timeStrToMinutes(t){
+  const m = /^(\d{2}):(\d{2})(\(翌\))?$/.exec(t||"");
+  if(!m) return null;
+  let mins = parseInt(m[1],10)*60 + parseInt(m[2],10);
+  if(m[3]) mins += 24*60;
+  return mins;
+}
+function hourLabel(h){
+  const displayHour = h % 24;
+  return `${displayHour}時台` + (h>=24 ? "(翌)" : "");
+}
+
+function parseShiftWorkbook(workbook){
+  const XL = window.XLSX;
+  const ws = workbook.Sheets[workbook.SheetNames[0]];
+  const range = XL.utils.decode_range(ws["!ref"]);
+
+  const legend = {};
+  for(let r=range.s.r; r<=range.e.r; r++){
+    const labelCell = ws[XL.utils.encode_cell({r, c:2})];
+    if(labelCell && typeof labelCell.v === "string" && labelCell.v.trim()){
+      const bCell = ws[XL.utils.encode_cell({r, c:1})];
+      if(bCell && bCell.s && bCell.s.fgColor && bCell.s.fgColor.rgb){
+        legend[bCell.s.fgColor.rgb.toUpperCase()] = labelCell.v.trim();
+      }
+    }
+  }
+
+  let timeHeaderCol = null;
+  for(let c=range.s.c; c<=range.e.c; c++){
+    const cell = ws[XL.utils.encode_cell({r:0, c})];
+    if(cell && cell.v === "時間"){ timeHeaderCol = c; break; }
+  }
+  const blockStartCol = 3; // D列(0-indexed)。5:00スタート、15分刻み
+  const blockEndCol = (timeHeaderCol!==null ? timeHeaderCol-1 : blockStartCol+95);
+
+  function colToTime(c){
+    const blockIndex = c - blockStartCol;
+    const hourOffset = Math.floor(blockIndex/4);
+    const quarter = blockIndex % 4;
+    const hour = (5 + hourOffset) % 24;
+    const minute = quarter*15;
+    return `${String(hour).padStart(2,"0")}:${String(minute).padStart(2,"0")}${(5+hourOffset)>=24 ? "(翌)" : ""}`;
+  }
+
+  const staffList = [];
+  for(let r=1; r<=range.e.r; r++){
+    const nameCell = ws[XL.utils.encode_cell({r, c:0})];
+    const typeCell = ws[XL.utils.encode_cell({r, c:1})];
+    if(!nameCell || typeof nameCell.v !== "string" || !nameCell.v.trim()) break; // 空行(区切り)で終了
+    if(!typeCell || typeof typeCell.v !== "string" || !typeCell.v.trim()) break;
+    const name = nameCell.v.replace(/\s+/g," ").trim();
+    const employType = typeCell.v.trim();
+
+    const segments = [];
+    let cur = null;
+    for(let c=blockStartCol; c<=blockEndCol; c++){
+      const cell = ws[XL.utils.encode_cell({r, c})];
+      const color = (cell && cell.s && cell.s.fgColor && cell.s.fgColor.rgb) ? cell.s.fgColor.rgb.toUpperCase() : null;
+      const label = color ? (legend[color] || null) : null;
+      const segStart = colToTime(c);
+      const segEnd = colToTime(c+1); // このマスの「終わり」は次のマスの「開始」(15分刻み1マス=15分間)
+      if(!cur || cur.label !== label){
+        if(cur && cur.label) segments.push(cur);
+        cur = { label, start: segStart, end: segEnd };
+      } else {
+        cur.end = segEnd;
+      }
+    }
+    if(cur && cur.label) segments.push(cur);
+
+    let totalHours = null, totalPay = null;
+    for(let c=blockEndCol+1; c<=range.e.c; c++){
+      const headerCell = ws[XL.utils.encode_cell({r:0, c})];
+      const valCell = ws[XL.utils.encode_cell({r, c})];
+      if(headerCell && headerCell.v === "時間" && totalHours===null && valCell) totalHours = valCell.v;
+      if(headerCell && headerCell.v === "支給額" && totalPay===null && valCell) totalPay = valCell.v;
+    }
+    staffList.push({ name, employType, segments, totalHours, totalPay });
+  }
+
+  return { legend, staff: staffList };
+}
+
+function renderShifts(){
+  const wrap = document.createElement("div");
+  const h = document.createElement("h2");
+  h.className = "title";
+  h.textContent = "シフトデータ";
+  wrap.appendChild(h);
+
+  const uploadCard = document.createElement("div");
+  uploadCard.className = "card";
+  uploadCard.innerHTML = `<div style="font-weight:800;margin-bottom:10px;">日別シフトを取り込む</div><div style="font-size:12px;color:var(--muted);margin-bottom:12px;">「日別シフト」形式のExcelファイル(1日分)をアップロードすると、その日のシフトを取り込みます。</div>`;
+
+  const row = document.createElement("div");
+  row.className = "row";
+  const dateBox = document.createElement("div");
+  dateBox.className = "grow";
+  dateBox.style.maxWidth = "200px";
+  dateBox.innerHTML = `<label>対象日</label>`;
+  const dateInput = document.createElement("input");
+  dateInput.type = "date";
+  dateInput.value = shiftSelectedDate;
+  dateInput.onchange = ()=>{ shiftSelectedDate = dateInput.value; shiftUploadStatus = null; render(); };
+  dateBox.appendChild(dateInput);
+  row.appendChild(dateBox);
+
+  const fileBox = document.createElement("div");
+  fileBox.className = "grow";
+  fileBox.innerHTML = `<label>Excelファイル(.xlsx)</label>`;
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.accept = ".xlsx,.xls";
+  fileInput.onchange = ()=>{
+    const file = fileInput.files[0];
+    if(!file) return;
+    const m = file.name.match(/(\d{4})(\d{2})(\d{2})/); // ファイル名の8桁の数字(YYYYMMDD)から日付を自動判定
+    if(m){
+      const iso = `${m[1]}-${m[2]}-${m[3]}`;
+      shiftSelectedDate = iso;
+      dateInput.value = iso;
+      shiftUploadStatus = null;
+    }
+  };
+  fileBox.appendChild(fileInput);
+  row.appendChild(fileBox);
+  uploadCard.appendChild(row);
+
+  const uploadBtn = document.createElement("button");
+  uploadBtn.className = "primary";
+  uploadBtn.style.marginTop = "12px";
+  uploadBtn.textContent = "取り込む";
+  uploadBtn.onclick = ()=>{
+    const file = fileInput.files[0];
+    if(!file){ shiftUploadStatus = {type:"error", message:"ファイルを選んでください。"}; render(); return; }
+    if(typeof window.XLSX === "undefined"){
+      shiftUploadStatus = {type:"error", message:"Excel読み込み機能の読み込みに失敗しました。ページを再読み込みしてください。"};
+      render(); return;
+    }
+    const targetDate = shiftSelectedDate;
+    const reader = new FileReader();
+    reader.onload = async (e)=>{
+      try{
+        const data = new Uint8Array(e.target.result);
+        const workbook = window.XLSX.read(data, {type:"array", cellStyles:true});
+        const parsed = parseShiftWorkbook(workbook);
+        if(parsed.staff.length === 0){
+          shiftUploadStatus = {type:"error", message:"スタッフの行が見つかりませんでした。ファイル形式をご確認ください。"};
+          render();
+          return;
+        }
+        const payload = { ...parsed, uploadedAt: new Date().toISOString() };
+        await set(ref(db, `stores/${STORE_ID}/shifts/${targetDate}`), payload);
+        shiftDataCache[targetDate] = payload;
+        shiftUploadStatus = {type:"success", message:`${targetDate}のシフトを取り込みました(${parsed.staff.length}名分)。`};
+        render();
+      }catch(err){
+        console.error(err);
+        shiftUploadStatus = {type:"error", message:"取り込みに失敗しました:" + (err.message||"")};
+        render();
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+  uploadCard.appendChild(uploadBtn);
+
+  if(shiftUploadStatus){
+    const statusEl = document.createElement("div");
+    statusEl.style.cssText = `margin-top:10px;font-size:13px;font-weight:700;color:${shiftUploadStatus.type==="error" ? "var(--red)" : "var(--green)"};`;
+    statusEl.textContent = shiftUploadStatus.message;
+    uploadCard.appendChild(statusEl);
+  }
+  wrap.appendChild(uploadCard);
+
+  // 選択中の日付のデータをFirebaseから(初回のみ)取得してキャッシュする
+  ensureShiftDataLoaded(shiftSelectedDate);
+
+  const statusCard = document.createElement("div");
+  statusCard.className = "card";
+  const currentData = shiftDataCache[shiftSelectedDate];
+  statusCard.innerHTML = currentData
+    ? `<div style="font-size:13px;color:var(--muted);">${shiftSelectedDate}分:取り込み済み(${currentData.staff.length}名)</div>`
+    : `<div class="empty">${shiftSelectedDate}のシフトはまだ取り込まれていません</div>`;
+  wrap.appendChild(statusCard);
+
+  if(currentData){
+    const skillCheckCard = document.createElement("div");
+    skillCheckCard.className = "card";
+    skillCheckCard.appendChild(renderShiftSkillCheck(shiftSelectedDate));
+    wrap.appendChild(skillCheckCard);
+  }
 
   return wrap;
 }
