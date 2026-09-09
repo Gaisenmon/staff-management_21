@@ -386,7 +386,7 @@ function computeTenureMonths(hireDateStr){
 const INITIAL_YEAR = "2026";
 function seedStaff(){
   return STAFF_SEED.map(s => ({
-    ...s, status:"active", isEvaluator: EVALUATOR_SEED_NAMES.includes(s.name), isEvaluatee:true, hasLogin:false,
+    ...s, status:"active", isEvaluator: EVALUATOR_SEED_NAMES.includes(s.name), isEvaluatee:true, isAdmin:(s.employType==="社員" || s.name==="木内 健太"), hasLogin:false,
     yearData: { [INITIAL_YEAR]: emptyPeriods() },
   }));
 }
@@ -406,6 +406,7 @@ function migrateCoreState(s){
     if(!st.status){ st.status = st.active===false ? "resigned" : "active"; }
     if(st.isEvaluator === undefined){ st.isEvaluator = EVALUATOR_SEED_NAMES.includes(st.name); }
     if(st.isEvaluatee === undefined){ st.isEvaluatee = true; } // 被評価者かどうか。デフォルトは全員対象
+    if(st.isAdmin === undefined){ st.isAdmin = (st.employType === "社員") || st.name === "木内 健太"; } // 管理者かどうか。既存の社員+木内さんは自動でtrue
     if(st.hasLogin === undefined){ st.hasLogin = false; }
     if(st.yearData){
       Object.values(st.yearData).forEach(yd=>{
@@ -521,6 +522,17 @@ function resolveCurrentPersonName(){
   const code = String(getLoginCode());
   const match = (state.staff||[]).find(s=>String(s.code)===code);
   return match ? match.name : null;
+}
+/* 権限まわり:今ログインしている人のスタッフレコードと、その人が管理者かどうか。
+   まだサーバー側(Firebaseセキュリティルール)では強制していない「見た目レベル」の制御で、
+   本当の意味でのアクセス制御ではない点に注意(開発者ツールから操作すれば技術的には回避できる)。 */
+function currentStaffObj(){
+  if(!state) return null;
+  return (state.staff||[]).find(s=>s.name===currentPersonName) || null;
+}
+function isCurrentUserAdmin(){
+  const s = currentStaffObj();
+  return !!(s && s.isAdmin);
 }
 
 
@@ -678,7 +690,9 @@ function renderYearPicker(){
       render();
     }, {confirmLabel:"追加する"});
   };
-  box.appendChild(addBtn);
+  if(isCurrentUserAdmin()){
+    box.appendChild(addBtn);
+  }
   return box;
 }
 
@@ -1208,20 +1222,27 @@ function renderEntry(){
   evaluatorBox.appendChild(evaluatorSelect);
   evaluatorRow.appendChild(evaluatorBox);
   if(locked){
-    const editBtn = document.createElement("button");
-    editBtn.className = "primary";
-    editBtn.textContent = "編集";
-    editBtn.style.cssText = "background:var(--charcoal);margin-left:auto;";
-    editBtn.onclick = ()=>{
-      editingForm = false;
-      const before = clonePeriod(periodData);
-      periodData.confirmed = false;
-      diffAndLog(staffObj, selectedYear, entrySelectedPeriod, before, periodData);
-      editSnapshots[key] = clonePeriod(periodData);
-      saveState();
-      render();
-    };
-    evaluatorRow.appendChild(editBtn);
+    if(isCurrentUserAdmin()){
+      const editBtn = document.createElement("button");
+      editBtn.className = "primary";
+      editBtn.textContent = "編集";
+      editBtn.style.cssText = "background:var(--charcoal);margin-left:auto;";
+      editBtn.onclick = ()=>{
+        editingForm = false;
+        const before = clonePeriod(periodData);
+        periodData.confirmed = false;
+        diffAndLog(staffObj, selectedYear, entrySelectedPeriod, before, periodData);
+        editSnapshots[key] = clonePeriod(periodData);
+        saveState();
+        render();
+      };
+      evaluatorRow.appendChild(editBtn);
+    } else {
+      const note = document.createElement("div");
+      note.style.cssText = "margin-left:auto;font-size:12px;color:var(--muted);";
+      note.textContent = "編集ロックの解除は管理者のみ行えます";
+      evaluatorRow.appendChild(note);
+    }
   }
   card.appendChild(evaluatorRow);
 
@@ -2208,7 +2229,9 @@ function renderShifts(){
     statusEl.textContent = shiftUploadStatus.message;
     uploadCard.appendChild(statusEl);
   }
-  wrap.appendChild(uploadCard);
+  if(isCurrentUserAdmin()){
+    wrap.appendChild(uploadCard);
+  }
 
   ensureShiftDateListLoaded();
   const listCard = document.createElement("div");
@@ -2234,24 +2257,26 @@ function renderShifts(){
       chip.onclick = ()=>{ shiftSelectedDate = d; shiftUploadStatus = null; render(); };
       group.appendChild(chip);
 
-      const delBtn = document.createElement("button");
-      delBtn.textContent = "✕";
-      delBtn.title = "この日のシフトを削除";
-      delBtn.style.cssText = d===shiftSelectedDate
-        ? "background:transparent;color:#fff;border:none;padding:6px 12px 6px 4px;font-size:11px;cursor:pointer;font-family:inherit;opacity:0.85;"
-        : "background:transparent;color:var(--ember-dark);border:none;padding:6px 12px 6px 4px;font-size:11px;cursor:pointer;font-family:inherit;opacity:0.7;";
-      delBtn.onclick = (e)=>{
-        e.stopPropagation();
-        showModal(`${d}のシフトデータを削除します。元に戻せません。よろしいですか?`, async ()=>{
-          try{ await set(ref(db, `stores/${STORE_ID}/shifts/${d}`), null); }catch(err){ console.error(err); }
-          delete shiftDataCache[d];
-          if(shiftDateListCache) shiftDateListCache = shiftDateListCache.filter(x=>x!==d);
-          if(shiftSelectedDate === d) shiftUploadStatus = null;
-          showToast(`${d}のシフトを削除しました`);
-          render();
-        }, {confirmLabel:"削除する"});
-      };
-      group.appendChild(delBtn);
+      if(isCurrentUserAdmin()){
+        const delBtn = document.createElement("button");
+        delBtn.textContent = "✕";
+        delBtn.title = "この日のシフトを削除";
+        delBtn.style.cssText = d===shiftSelectedDate
+          ? "background:transparent;color:#fff;border:none;padding:6px 12px 6px 4px;font-size:11px;cursor:pointer;font-family:inherit;opacity:0.85;"
+          : "background:transparent;color:var(--ember-dark);border:none;padding:6px 12px 6px 4px;font-size:11px;cursor:pointer;font-family:inherit;opacity:0.7;";
+        delBtn.onclick = (e)=>{
+          e.stopPropagation();
+          showModal(`${d}のシフトデータを削除します。元に戻せません。よろしいですか?`, async ()=>{
+            try{ await set(ref(db, `stores/${STORE_ID}/shifts/${d}`), null); }catch(err){ console.error(err); }
+            delete shiftDataCache[d];
+            if(shiftDateListCache) shiftDateListCache = shiftDateListCache.filter(x=>x!==d);
+            if(shiftSelectedDate === d) shiftUploadStatus = null;
+            showToast(`${d}のシフトを削除しました`);
+            render();
+          }, {confirmLabel:"削除する"});
+        };
+        group.appendChild(delBtn);
+      }
 
       chipWrap.appendChild(group);
     });
@@ -2308,6 +2333,14 @@ function renderStaffAdmin(){
   h.className = "title";
   h.textContent = "スタッフマスタ";
   wrap.appendChild(h);
+
+  if(!isCurrentUserAdmin()){
+    const denied = document.createElement("div");
+    denied.className = "card";
+    denied.innerHTML = `<div class="empty">このタブは管理者のみ利用できます。必要な場合は管理者にご相談ください。</div>`;
+    wrap.appendChild(denied);
+    return wrap;
+  }
 
   // 新規追加フォーム
   const addCard = document.createElement("div");
@@ -2558,6 +2591,61 @@ function renderStaffAdmin(){
   exCard.appendChild(exAddRow);
   wrap.appendChild(exCard);
 
+  // 管理者一覧(スタッフマスタ・変更履歴削除・シフト挿入/削除・年度移行などができる人)
+  const adminCard = document.createElement("div");
+  adminCard.className = "card";
+  adminCard.innerHTML = `<div style="font-weight:800;font-size:15px;margin-bottom:4px;">管理者一覧</div><div style="font-size:12px;color:var(--muted);margin-bottom:14px;">ここに入れた人は、スタッフマスタの編集・変更履歴の削除・シフトの挿入と削除・年度移行ができます。まだ画面上での制御のみで、サーバー側では強制していません。</div>`;
+  const currentAdmins = state.staff.filter(s=>s.isAdmin);
+  const adminChipsWrap = document.createElement("div");
+  adminChipsWrap.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;";
+  if(currentAdmins.length===0){
+    const empty = document.createElement("div");
+    empty.style.cssText = "color:var(--muted);font-size:13px;";
+    empty.textContent = "管理者が設定されていません。";
+    adminChipsWrap.appendChild(empty);
+  }
+  currentAdmins.forEach(st=>{
+    const chip = document.createElement("span");
+    chip.style.cssText = "display:inline-flex;align-items:center;gap:6px;background:var(--amber-bg);color:var(--amber);border-radius:20px;padding:5px 8px 5px 14px;font-size:12.5px;font-weight:700;";
+    chip.textContent = st.name;
+    const removeBtn = document.createElement("button");
+    removeBtn.textContent = "✕";
+    removeBtn.style.cssText = "background:none;border:none;color:inherit;cursor:pointer;font-size:12px;padding:2px 4px;font-family:inherit;";
+    removeBtn.title = "管理者から外す";
+    removeBtn.onclick = ()=>{
+      st.isAdmin = false;
+      saveState();
+      render();
+    };
+    chip.appendChild(removeBtn);
+    adminChipsWrap.appendChild(chip);
+  });
+  adminCard.appendChild(adminChipsWrap);
+
+  const adminAddRow = document.createElement("div");
+  adminAddRow.style.cssText = "display:flex;gap:10px;align-items:center;";
+  const adminAddSelect = document.createElement("select");
+  adminAddSelect.style.maxWidth = "260px";
+  const adminCandidates = state.staff.filter(s=>!s.isAdmin);
+  adminAddSelect.innerHTML = adminCandidates.length
+    ? adminCandidates.map(s=>`<option value="${s.id}">${s.name}</option>`).join("")
+    : `<option value="">(候補がいません)</option>`;
+  adminAddRow.appendChild(adminAddSelect);
+  const adminAddBtn = document.createElement("button");
+  adminAddBtn.className = "ghost small";
+  adminAddBtn.textContent = "管理者に追加する";
+  adminAddBtn.style.cssText = "background:transparent;color:var(--ember-dark);border:1px solid var(--ember);border-radius:8px;padding:8px 16px;font-weight:700;font-size:12.5px;cursor:pointer;font-family:inherit;";
+  adminAddBtn.onclick = ()=>{
+    const target = state.staff.find(s=>s.id===adminAddSelect.value);
+    if(!target) return;
+    target.isAdmin = true;
+    saveState();
+    render();
+  };
+  adminAddRow.appendChild(adminAddBtn);
+  adminCard.appendChild(adminAddRow);
+  wrap.appendChild(adminCard);
+
   return wrap;
 }
 
@@ -2659,7 +2747,7 @@ function renderHistory(){
   h.textContent = "変更履歴";
   titleRow.appendChild(h);
 
-  if(state.history && state.history.length > 0){
+  if(state.history && state.history.length > 0 && isCurrentUserAdmin()){
     const actions = document.createElement("div");
     actions.style.cssText = "display:flex;gap:8px;";
     const delAllBtn = document.createElement("button");
@@ -2719,18 +2807,20 @@ function renderHistory(){
     });
 
     const delTd = document.createElement("td");
-    const delBtn = document.createElement("button");
-    delBtn.innerHTML = trashIconSVG();
-    delBtn.title = "この履歴を削除";
-    delBtn.style.cssText = "background:transparent;border:none;color:var(--muted);cursor:pointer;padding:4px;display:flex;align-items:center;";
-    delBtn.onclick = ()=>{
-      showModal("この変更履歴を削除しますか?", ()=>{
-        state.history = state.history.filter(x => x.id !== en.id);
-        saveState();
-        render();
-      }, {confirmLabel:"削除する"});
-    };
-    delTd.appendChild(delBtn);
+    if(isCurrentUserAdmin()){
+      const delBtn = document.createElement("button");
+      delBtn.innerHTML = trashIconSVG();
+      delBtn.title = "この履歴を削除";
+      delBtn.style.cssText = "background:transparent;border:none;color:var(--muted);cursor:pointer;padding:4px;display:flex;align-items:center;";
+      delBtn.onclick = ()=>{
+        showModal("この変更履歴を削除しますか?", ()=>{
+          state.history = state.history.filter(x => x.id !== en.id);
+          saveState();
+          render();
+        }, {confirmLabel:"削除する"});
+      };
+      delTd.appendChild(delBtn);
+    }
     tr.appendChild(delTd);
     tbody.appendChild(tr);
   });
