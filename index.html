@@ -220,7 +220,7 @@
 <script type="module">
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getDatabase, ref, set, get, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
-import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword, updatePassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 /* ==============================================================
    会社用(赤門)本番接続。akamo-staff-management プロジェクトに接続。
@@ -548,22 +548,28 @@ function renderUserPicker(){
   pwBtn.className = "logout-btn";
   pwBtn.textContent = "パスワード変更";
   pwBtn.onclick = ()=>{
-    showInputModal(
-      "新しいパスワードを入力してください(6文字以上)。",
-      async (newPassword, close)=>{
-        if(!newPassword || newPassword.length < 6){ throw new Error("パスワードは6文字以上にしてください。"); }
+    showTwoInputModal(
+      "パスワードを変更するには、現在のパスワードの確認が必要です。",
+      async (currentPassword, newPassword, close)=>{
+        if(!currentPassword){ throw new Error("現在のパスワードを入力してください。"); }
+        if(!newPassword || newPassword.length < 6){ throw new Error("新しいパスワードは6文字以上にしてください。"); }
         try{
+          const cred = EmailAuthProvider.credential(auth.currentUser.email, currentPassword);
+          await reauthenticateWithCredential(auth.currentUser, cred);
           await updatePassword(auth.currentUser, newPassword);
         }catch(e){
-          if(e.code === "auth/requires-recent-login"){
-            throw new Error("セキュリティのため、変更には再ログインが必要です。一度ログアウトしてログインし直してから、もう一度お試しください。");
+          if(e.code === "auth/wrong-password" || e.code === "auth/invalid-credential"){
+            throw new Error("現在のパスワードが正しくありません。");
+          }
+          if(e.code === "auth/too-many-requests"){
+            throw new Error("試行回数が多すぎます。しばらく経ってからもう一度お試しください。");
           }
           throw new Error("変更に失敗しました:" + (e.message||""));
         }
         close();
         showToast("パスワードを変更しました");
       },
-      {inputType:"password", placeholder:"新しいパスワード", confirmLabel:"変更する"}
+      {confirmLabel:"変更する"}
     );
   };
   box.appendChild(pwBtn);
@@ -648,6 +654,60 @@ function showInputModal(message, onSubmit, opts){
   overlay.appendChild(box);
   document.body.appendChild(overlay);
   input.focus();
+}
+
+/* showInputModalの2項目版(現在のパスワード+新しいパスワードの入力に使用)。 */
+function showTwoInputModal(message, onSubmit, opts){
+  opts = opts || {};
+  const overlay = document.createElement("div");
+  overlay.style.cssText = "position:fixed;inset:0;background:rgba(36,30,25,0.55);z-index:200;display:flex;align-items:center;justify-content:center;padding:20px;";
+  const box = document.createElement("div");
+  box.style.cssText = "background:#fff;border-radius:14px;padding:22px;max-width:380px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.28);";
+  const msg = document.createElement("div");
+  msg.style.cssText = "font-size:14px;line-height:1.7;color:var(--ink);margin-bottom:14px;white-space:pre-wrap;";
+  msg.textContent = message;
+  box.appendChild(msg);
+  const input1 = document.createElement("input");
+  input1.type = "password";
+  input1.placeholder = "現在のパスワード";
+  input1.autocomplete = "current-password";
+  input1.style.cssText = "width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;margin-bottom:8px;box-sizing:border-box;";
+  box.appendChild(input1);
+  const input2 = document.createElement("input");
+  input2.type = "password";
+  input2.placeholder = "新しいパスワード(6文字以上)";
+  input2.autocomplete = "new-password";
+  input2.style.cssText = "width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;margin-bottom:8px;box-sizing:border-box;";
+  box.appendChild(input2);
+  const errEl = document.createElement("div");
+  errEl.style.cssText = "color:#B23A2E;font-size:12.5px;margin-bottom:8px;min-height:16px;";
+  box.appendChild(errEl);
+  const btnRow = document.createElement("div");
+  btnRow.style.cssText = "display:flex;justify-content:flex-end;gap:10px;";
+  const cancelBtn = document.createElement("button");
+  cancelBtn.textContent = opts.cancelLabel || "キャンセル";
+  cancelBtn.style.cssText = "background:#fff;border:1px solid var(--line);color:var(--muted);border-radius:8px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;";
+  cancelBtn.onclick = ()=> overlay.remove();
+  const okBtn = document.createElement("button");
+  okBtn.className = "primary";
+  okBtn.textContent = opts.confirmLabel || "OK";
+  okBtn.onclick = async ()=>{
+    errEl.textContent = "";
+    okBtn.disabled = true;
+    try{
+      await onSubmit(input1.value, input2.value, ()=> overlay.remove());
+    }catch(e){
+      errEl.textContent = e.message || "エラーが発生しました";
+      okBtn.disabled = false;
+    }
+  };
+  input2.addEventListener("keydown", (e)=>{ if(e.key==="Enter") okBtn.click(); });
+  btnRow.appendChild(cancelBtn);
+  btnRow.appendChild(okBtn);
+  box.appendChild(btnRow);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  input1.focus();
 }
 
 /* 管理者(今ログイン中の人)のセッションを維持したまま、新しいログインアカウントを作成する。
