@@ -2390,60 +2390,61 @@ const STATUS_META = {
   const listCard = document.createElement("div");
   listCard.className = "card";
   listCard.innerHTML = `<div style="font-weight:800;font-size:15px;margin-bottom:12px;">スタッフ一覧(${state.staff.filter(s=>s.status==="active").length}名在籍)</div>`;
+
+  // 編集フォームは表のセルに入れると表のレイアウトが崩れるため、表とは別の独立したカードとして出す
+  const editingStaff = state.staff.find(s=>s.id===editingStaffId);
+  if(editingStaff){
+    const editCard = document.createElement("div");
+    editCard.className = "card";
+    editCard.innerHTML = `<div style="font-weight:800;font-size:15px;margin-bottom:12px;">${editingStaff.name}さんを編集</div>`;
+    const form = document.createElement("div");
+    form.className = "edit-form";
+    form.innerHTML = `
+      <div class="row2">
+        <div style="flex:2;"><label>氏名</label><input class="se-name" type="text" value="${editingStaff.name}"></div>
+        <div style="flex:1;"><label>社員CD</label><input class="se-code" type="text" value="${editingStaff.code}"></div>
+      </div>
+      <div class="row2">
+        <div style="flex:1;"><label>雇用区分</label><select class="se-type">
+          ${["アルバイト","パート","社員"].map(t=>`<option ${editingStaff.employType===t?"selected":""}>${t}</option>`).join("")}
+        </select></div>
+        <div style="flex:1;"><label>所属</label><select class="se-aff">
+          ${["ホール","キッチン","両方"].map(a=>`<option ${editingStaff.affiliation===a?"selected":""}>${a}</option>`).join("")}
+        </select></div>
+      </div>
+      <div><label>入社日</label><input class="se-hire" type="date" value="${editingStaff.hireDate||""}"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="ghost small se-cancel">キャンセル</button>
+        <button class="primary se-save">保存</button>
+      </div>
+    `;
+    form.querySelector(".se-cancel").onclick = ()=>{ editingStaffId = null; render(); };
+    form.querySelector(".se-save").onclick = ()=>{
+      const newName = form.querySelector(".se-name").value.trim();
+      const newCode = form.querySelector(".se-code").value.trim();
+      if(!newName || !newCode){ showToast("氏名と社員CDは必須です"); return; }
+      if(state.staff.some(s=>s.id!==editingStaff.id && String(s.code)===String(newCode))){
+        showToast(`社員CD ${newCode} は既に使われています`); return;
+      }
+      editingStaff.name = newName;
+      editingStaff.code = newCode;
+      editingStaff.employType = form.querySelector(".se-type").value;
+      editingStaff.affiliation = form.querySelector(".se-aff").value;
+      editingStaff.hireDate = form.querySelector(".se-hire").value || null;
+      editingStaffId = null;
+      saveState();
+      render();
+    };
+    editCard.appendChild(form);
+    wrap.appendChild(editCard);
+  }
+
   const tableWrap = document.createElement("div");
   tableWrap.className = "table-wrap";
   const table = document.createElement("table");
   table.innerHTML = `<thead><tr><th>社員CD</th><th class="name-col">氏名</th><th>雇用区分</th><th>所属</th><th>入社日</th><th>状態</th><th>ログイン</th><th style="text-align:right;">操作</th></tr></thead>`;
   const tbody = document.createElement("tbody");
   [...state.staff].sort((a,b)=> Number(a.code)-Number(b.code)).forEach(st=>{
-    if(st.id === editingStaffId){
-      const editTr = document.createElement("tr");
-      const editTd = document.createElement("td");
-      editTd.colSpan = 8;
-      editTd.style.padding = "12px";
-      const form = document.createElement("div");
-      form.className = "edit-form";
-      form.innerHTML = `
-        <div class="row2">
-          <input class="se-name" type="text" value="${st.name}" placeholder="氏名" style="flex:2;">
-          <input class="se-code" type="text" value="${st.code}" placeholder="社員CD" style="flex:1;">
-        </div>
-        <div class="row2">
-          <select class="se-type" style="flex:1;">
-            ${["アルバイト","パート","社員"].map(t=>`<option ${st.employType===t?"selected":""}>${t}</option>`).join("")}
-          </select>
-          <select class="se-aff" style="flex:1;">
-            ${["ホール","キッチン","両方"].map(a=>`<option ${st.affiliation===a?"selected":""}>${a}</option>`).join("")}
-          </select>
-        </div>
-        <input class="se-hire" type="date" value="${st.hireDate||""}">
-        <div style="display:flex;gap:8px;justify-content:flex-end;">
-          <button class="ghost small se-cancel">キャンセル</button>
-          <button class="primary se-save">保存</button>
-        </div>
-      `;
-      form.querySelector(".se-cancel").onclick = ()=>{ editingStaffId = null; render(); };
-      form.querySelector(".se-save").onclick = ()=>{
-        const newName = form.querySelector(".se-name").value.trim();
-        const newCode = form.querySelector(".se-code").value.trim();
-        if(!newName || !newCode){ showToast("氏名と社員CDは必須です"); return; }
-        if(state.staff.some(s=>s.id!==st.id && String(s.code)===String(newCode))){
-          showToast(`社員CD ${newCode} は既に使われています`); return;
-        }
-        st.name = newName;
-        st.code = newCode;
-        st.employType = form.querySelector(".se-type").value;
-        st.affiliation = form.querySelector(".se-aff").value;
-        st.hireDate = form.querySelector(".se-hire").value || null;
-        editingStaffId = null;
-        saveState();
-        render();
-      };
-      editTd.appendChild(form);
-      editTr.appendChild(editTd);
-      tbody.appendChild(editTr);
-      return;
-    }
     const tr = document.createElement("tr");
     const meta = STATUS_META[st.status] || STATUS_META.active;
     tr.innerHTML = `
