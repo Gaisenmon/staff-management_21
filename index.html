@@ -1064,6 +1064,7 @@ function renderDashboard(){
 
 /* ---------- ATS評価入力(紙の評価票と同じ表レイアウト・4期間分の履歴を保持) ---------- */
 let entrySelectedId = null;
+let editingStaffId = null; // スタッフマスタでの編集中スタッフID(再描画をまたいで保持する必要があるためトップレベル)
 /* 名前で絞り込める検索欄。プルダウンだと人数が多い時に探しづらいための代替。
    input+datalistではなく自前でドロップダウンパネルを描画している(iOS Safariでdatalistの候補が
    ほぼ表示されない/不安定という問題があるため、どの端末でも同じ見た目・動きになるようにした)。 */
@@ -2372,6 +2373,7 @@ function renderStaffAdmin(){
     state.years.forEach(y => { yearData[y] = emptyPeriods(); });
     state.staff.push({
       id: "s"+Date.now(), code, name, employType, affiliation, hireDate, status:"active", yearData,
+      isEvaluator:false, isEvaluatee:true, isAdmin:false, hasLogin:false,
     });
     saveState();
     render();
@@ -2379,8 +2381,8 @@ function renderStaffAdmin(){
   addCard.appendChild(addBtn);
   wrap.appendChild(addCard);
 
-  // 一覧・在籍/休職/退職の切り替え
-  const STATUS_META = {
+// 一覧・在籍/休職/退職の切り替え・編集
+const STATUS_META = {
     active:   {label:"在籍", style:"background:var(--green-bg);color:var(--green);"},
     leave:    {label:"休職", style:"background:var(--amber-bg);color:var(--amber);"},
     resigned: {label:"退職", style:"background:#FBE4E1;color:#B23A2E;"},
@@ -2394,6 +2396,54 @@ function renderStaffAdmin(){
   table.innerHTML = `<thead><tr><th>社員CD</th><th class="name-col">氏名</th><th>雇用区分</th><th>所属</th><th>入社日</th><th>状態</th><th>ログイン</th><th style="text-align:right;">操作</th></tr></thead>`;
   const tbody = document.createElement("tbody");
   [...state.staff].sort((a,b)=> Number(a.code)-Number(b.code)).forEach(st=>{
+    if(st.id === editingStaffId){
+      const editTr = document.createElement("tr");
+      const editTd = document.createElement("td");
+      editTd.colSpan = 8;
+      editTd.style.padding = "12px";
+      const form = document.createElement("div");
+      form.className = "edit-form";
+      form.innerHTML = `
+        <div class="row2">
+          <input class="se-name" type="text" value="${st.name}" placeholder="氏名" style="flex:2;">
+          <input class="se-code" type="text" value="${st.code}" placeholder="社員CD" style="flex:1;">
+        </div>
+        <div class="row2">
+          <select class="se-type" style="flex:1;">
+            ${["アルバイト","パート","社員"].map(t=>`<option ${st.employType===t?"selected":""}>${t}</option>`).join("")}
+          </select>
+          <select class="se-aff" style="flex:1;">
+            ${["ホール","キッチン","両方"].map(a=>`<option ${st.affiliation===a?"selected":""}>${a}</option>`).join("")}
+          </select>
+        </div>
+        <input class="se-hire" type="date" value="${st.hireDate||""}">
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+          <button class="ghost small se-cancel">キャンセル</button>
+          <button class="primary se-save">保存</button>
+        </div>
+      `;
+      form.querySelector(".se-cancel").onclick = ()=>{ editingStaffId = null; render(); };
+      form.querySelector(".se-save").onclick = ()=>{
+        const newName = form.querySelector(".se-name").value.trim();
+        const newCode = form.querySelector(".se-code").value.trim();
+        if(!newName || !newCode){ showToast("氏名と社員CDは必須です"); return; }
+        if(state.staff.some(s=>s.id!==st.id && String(s.code)===String(newCode))){
+          showToast(`社員CD ${newCode} は既に使われています`); return;
+        }
+        st.name = newName;
+        st.code = newCode;
+        st.employType = form.querySelector(".se-type").value;
+        st.affiliation = form.querySelector(".se-aff").value;
+        st.hireDate = form.querySelector(".se-hire").value || null;
+        editingStaffId = null;
+        saveState();
+        render();
+      };
+      editTd.appendChild(form);
+      editTr.appendChild(editTd);
+      tbody.appendChild(editTr);
+      return;
+    }
     const tr = document.createElement("tr");
     const meta = STATUS_META[st.status] || STATUS_META.active;
     tr.innerHTML = `
@@ -2412,6 +2462,11 @@ function renderStaffAdmin(){
     const actionGroup = document.createElement("div");
     actionGroup.className = "btn-group";
     actionGroup.style.justifyContent = "flex-end";
+    const editStaffBtn = document.createElement("button");
+    editStaffBtn.textContent = "編集";
+    editStaffBtn.style.cssText = "background:#fff;border:1px solid var(--line);color:var(--muted);border-radius:20px;padding:5px 14px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;";
+    editStaffBtn.onclick = ()=>{ editingStaffId = st.id; render(); };
+    actionGroup.appendChild(editStaffBtn);
     [{key:"leave", label:"休職"}, {key:"resigned", label:"退職"}].forEach(opt=>{
       const btn = document.createElement("button");
       btn.textContent = opt.label;
