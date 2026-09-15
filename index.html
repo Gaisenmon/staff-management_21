@@ -839,10 +839,11 @@ function computeCurrentPeriodDefault(){
   return { period, fiscalYear: String(fiscalYear) };
 }
 let defaultsApplied = false;
-/* 指定した年度・時期について、対象となる全スタッフ(被評価者)が確定済み(または評価対象外)かどうか。
+/* 指定した年度・時期について、対象となる全スタッフ(在籍中の被評価者)が確定済み(または評価対象外)かどうか。
+   「ATS評価-全体」下部の「未確定◯名」表示と同じ母集団(在籍中のみ)で判定する。
    対象者が1人もいない場合はfalse扱い(進める根拠がないため)。 */
 function isPeriodFullyConfirmed(fiscalYear, period){
-  const evaluatees = state.staff.filter(s=>s.isEvaluatee);
+  const evaluatees = state.staff.filter(s=>s.isEvaluatee && s.status==="active");
   if(evaluatees.length===0) return false;
   return evaluatees.every(s=>{
     const yd = s.yearData[fiscalYear];
