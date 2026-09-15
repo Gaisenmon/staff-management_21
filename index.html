@@ -1922,12 +1922,40 @@ const analysisOpenState = {}; // {[moduleId]: boolean} 未設定(undefined)は�
 /* シフト×スキル充足チェック。データ分析タブではなくシフトデータタブに表示する。
    開店準備(9-10時)・閉店後片付け(22時)は営業時間外の作業なのでチェック対象から除外する。 */
 const SKILL_CHECK_EXCLUDED_HOURS = [9, 10, 22];
+// 不足ポジション検知専用の年度・時期(データ分析タブのnineboxPeriodとは独立させ、
+// タブをまたいで判定基準がこっそり変わらないようにする)。初回はnullでrenderShiftSkillCheck内で初期化。
+let shiftSkillYear = null;
+let shiftSkillPeriod = null;
 function renderShiftSkillCheck(date){
+  if(shiftSkillYear === null) shiftSkillYear = selectedYear;
+  if(shiftSkillPeriod === null) shiftSkillPeriod = dashboardPeriod;
+
   const container = document.createElement("div");
   const title = document.createElement("div");
-  title.style.cssText = "font-weight:800;font-size:15px;margin-bottom:4px;";
+  title.style.cssText = "font-weight:800;font-size:15px;margin-bottom:10px;";
   title.textContent = "不足ポジション検知";
   container.appendChild(title);
+
+  const criteriaRow = document.createElement("div");
+  criteriaRow.style.cssText = "display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;";
+  const criteriaLabel = document.createElement("span");
+  criteriaLabel.style.cssText = "font-size:12px;color:var(--muted);font-weight:700;";
+  criteriaLabel.textContent = "評価基準:";
+  criteriaRow.appendChild(criteriaLabel);
+  const yearSelect = document.createElement("select");
+  yearSelect.style.cssText = "width:auto;padding:5px 8px;font-size:12.5px;";
+  yearSelect.innerHTML = state.years.map(y=>`<option value="${y}" ${y===shiftSkillYear?"selected":""}>${y}年度</option>`).join("");
+  yearSelect.onchange = ()=>{ shiftSkillYear = yearSelect.value; render(); };
+  criteriaRow.appendChild(yearSelect);
+  PERIODS.forEach(p=>{
+    const b = document.createElement("button");
+    b.textContent = p;
+    b.className = p===shiftSkillPeriod ? "active" : "";
+    b.style.cssText = "font-size:12px;padding:5px 12px;";
+    b.onclick = ()=>{ shiftSkillPeriod = p; render(); };
+    criteriaRow.appendChild(b);
+  });
+  container.appendChild(criteriaRow);
 
   const shiftData = shiftDataCache[date];
   if(!shiftData){
@@ -1977,8 +2005,8 @@ function renderShiftSkillCheck(date){
       cat.items.forEach(item=>{
         const holderCount = present.filter(s=>{
           if(!s.staffObj) return false;
-          const yd = s.staffObj.yearData[selectedYear];
-          const pd = yd ? yd[nineboxPeriod] : null;
+          const yd = s.staffObj.yearData[shiftSkillYear];
+          const pd = yd ? yd[shiftSkillPeriod] : null;
           if(!pd || pd.exempt) return false;
           const v = pd.scores[item.name] ?? 0;
           return v >= starAt(item.max);
@@ -2073,14 +2101,34 @@ let shiftUploadStatus = null;
 let shiftDataCache = {}; // {date: パース済みデータ|null(未取込確認済み)}
 let shiftDateListCache = null; // 取り込み済みの日付一覧(配列)。未取得ならnull
 let shiftDateListFetching = false;
+/* シフトの「日付一覧」だけを軽く取得するための専用インデックス(stores/.../shiftDates)。
+   これが無いと、日付一覧を出すためだけに全日程・全スタッフの詳細データを毎回まるごと
+   取得することになり、日数が増えるほど重くなってしまう。
+   既存データ(このインデックスができる前に保存された日)は、初回だけ自動でインデックスに登録する。 */
+let shiftDatesIndexMigrated = false;
+async function migrateLegacyShiftDatesIfNeeded(){
+  if(shiftDatesIndexMigrated) return;
+  shiftDatesIndexMigrated = true;
+  try{
+    const indexSnap = await get(ref(db, `stores/${STORE_ID}/shiftDates`));
+    if(indexSnap.exists()) return;
+    const fullSnap = await get(ref(db, `stores/${STORE_ID}/shifts`));
+    if(!fullSnap.exists()) return;
+    const updates = {};
+    Object.keys(fullSnap.val()).forEach(d=>{ updates[d] = true; });
+    await set(ref(db, `stores/${STORE_ID}/shiftDates`), updates);
+  }catch(e){ console.error("シフト日付インデックスの移行に失敗:", e); }
+}
 function ensureShiftDateListLoaded(){
   if(shiftDateListCache !== null || shiftDateListFetching) return;
   shiftDateListFetching = true;
-  get(ref(db, `stores/${STORE_ID}/shifts`)).then(snap=>{
-    shiftDateListCache = snap.exists() ? Object.keys(snap.val()).sort() : [];
-    shiftDateListFetching = false;
-    render();
-  }).catch(()=>{ shiftDateListCache = []; shiftDateListFetching = false; });
+  migrateLegacyShiftDatesIfNeeded()
+    .then(()=> get(ref(db, `stores/${STORE_ID}/shiftDates`)))
+    .then(snap=>{
+      shiftDateListCache = snap.exists() ? Object.keys(snap.val()).sort() : [];
+      shiftDateListFetching = false;
+      render();
+    }).catch(()=>{ shiftDateListCache = []; shiftDateListFetching = false; });
 }
 let shiftFetchInFlight = {};
 /* シフトデータを(未取得なら)Firebaseから取り込んでキャッシュする共通処理。
@@ -2302,6 +2350,7 @@ function renderShifts(){
         }
         const payload = { ...parsed, uploadedAt: new Date().toISOString() };
         await set(ref(db, `stores/${STORE_ID}/shifts/${targetDate}`), payload);
+        await set(ref(db, `stores/${STORE_ID}/shiftDates/${targetDate}`), true);
         shiftDataCache[targetDate] = payload;
         if(shiftDateListCache !== null && !shiftDateListCache.includes(targetDate)){
           shiftDateListCache.push(targetDate);
@@ -2363,7 +2412,10 @@ function renderShifts(){
         delBtn.onclick = (e)=>{
           e.stopPropagation();
           showModal(`${d}のシフトデータを削除します。元に戻せません。よろしいですか?`, async ()=>{
-            try{ await set(ref(db, `stores/${STORE_ID}/shifts/${d}`), null); }catch(err){ console.error(err); }
+            try{
+              await set(ref(db, `stores/${STORE_ID}/shifts/${d}`), null);
+              await set(ref(db, `stores/${STORE_ID}/shiftDates/${d}`), null);
+            }catch(err){ console.error(err); }
             delete shiftDataCache[d];
             if(shiftDateListCache) shiftDateListCache = shiftDateListCache.filter(x=>x!==d);
             if(shiftSelectedDate === d) shiftUploadStatus = null;
