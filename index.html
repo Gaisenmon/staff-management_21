@@ -1380,7 +1380,7 @@ function renderEntry(){
   bonusRow.appendChild(bonusLabel);
   const bonusChips = document.createElement("div");
   bonusChips.className = "chip-group";
-  [0,1].forEach(v=>{
+  [0,1,2,3].forEach(v=>{
     const chip = document.createElement("button");
     chip.className = "chip-btn" + (v===(periodData.bonus ?? 0) ? " selected" : "");
     chip.textContent = v;
@@ -1512,7 +1512,7 @@ function personalAchievementPct(staffObj, scores){
 }
 /* 勤続(横軸) × 達成率(縦軸)の散布図。バケツ分け・伸び率の判定は行わず、点をそのままプロットする。 */
 function buildScatterSVG(points){
-  const width=680, height=440, pad={top:16, right:24, bottom:54, left:60};
+  const width=760, height=440, pad={top:16, right:80, bottom:54, left:60};
   const plotW = width-pad.left-pad.right, plotH = height-pad.top-pad.bottom;
   const maxMonths = Math.max(24, ...points.map(p=>p.months), 1);
   const xFor = m => pad.left + (m/maxMonths)*plotW;
@@ -1545,7 +1545,7 @@ function buildScatterSVG(points){
       <text x="${px+7}" y="${py+3}" font-size="9" fill="#2B2420">${p.label}</text>
     </g>`;
   }).join("");
-  return `<svg viewBox="0 0 ${width} ${height}" width="100%" style="max-width:720px;display:block;">
+  return `<svg viewBox="0 0 ${width} ${height}" width="100%" style="max-width:800px;display:block;">
     ${axisTitles}${yGrid}${xGrid.join("")}${axisLines}${dots}
   </svg>`;
 }
@@ -1838,7 +1838,7 @@ const ANALYSIS_MODULES = [
   },
   {
     id: "busFactor",
-    label: "⭐️保持者数",
+    label: "⭐️保持者数(太字:満点)",
     render(){
       const container = document.createElement("div");
 
