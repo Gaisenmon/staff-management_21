@@ -839,11 +839,45 @@ function computeCurrentPeriodDefault(){
   return { period, fiscalYear: String(fiscalYear) };
 }
 let defaultsApplied = false;
+/* 指定した年度・時期について、対象となる全スタッフ(被評価者)が確定済み(または評価対象外)かどうか。
+   対象者が1人もいない場合はfalse扱い(進める根拠がないため)。 */
+function isPeriodFullyConfirmed(fiscalYear, period){
+  const evaluatees = state.staff.filter(s=>s.isEvaluatee);
+  if(evaluatees.length===0) return false;
+  return evaluatees.every(s=>{
+    const yd = s.yearData[fiscalYear];
+    const pd = yd ? yd[period] : undefined;
+    if(!pd) return false;
+    return !!(pd.confirmed || pd.exempt);
+  });
+}
+/* 時期を1つ先に進める。「1月」の次は翌年度の「4月」だが、翌年度がまだ作られていない場合は
+   進めようがないので、そのまま(変化なし)を返す。 */
+function advancePeriod(fiscalYear, period){
+  const idx = PERIODS.indexOf(period);
+  if(idx < PERIODS.length-1){
+    return { period: PERIODS[idx+1], fiscalYear };
+  }
+  const nextYear = String(Number(fiscalYear)+1);
+  if(state.years.includes(nextYear)){
+    return { period: PERIODS[0], fiscalYear: nextYear };
+  }
+  return { period, fiscalYear }; // これ以上進められない
+}
 function applyDefaultYearAndPeriod(){
   if(defaultsApplied) return;
   defaultsApplied = true;
-  const { period, fiscalYear } = computeCurrentPeriodDefault();
-  selectedYear = state.years.includes(fiscalYear) ? fiscalYear : state.years[state.years.length-1];
+  let { period, fiscalYear } = computeCurrentPeriodDefault();
+  fiscalYear = state.years.includes(fiscalYear) ? fiscalYear : state.years[state.years.length-1];
+  // 日付ベースの時期が全員確定済みなら、まだ確定しきっていない時期まで自動で進める
+  for(let i=0; i<PERIODS.length*state.years.length; i++){
+    if(!isPeriodFullyConfirmed(fiscalYear, period)) break;
+    const next = advancePeriod(fiscalYear, period);
+    if(next.period===period && next.fiscalYear===fiscalYear) break; // これ以上進めない
+    period = next.period;
+    fiscalYear = next.fiscalYear;
+  }
+  selectedYear = fiscalYear;
   dashboardPeriod = period;
   entrySelectedPeriod = period;
   personalChartPeriod = period;
