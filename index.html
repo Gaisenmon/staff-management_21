@@ -89,9 +89,16 @@
   .period-row .lbl{font-size:12px;color:var(--muted);font-weight:700;}
   .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:18px;}
   .table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;}
+  /* thead(見出し行)を「縦スクロールしても固定」するには、position:stickyの基準となる
+     スクロールコンテナ自体が実際に縦スクロールしている必要がある。.table-wrapは
+     overflow-x:autoを付けた時点で(仕様上)overflow-yも暗黙にautoとして扱われるが、
+     高さの制限が無いと中身がそのまま収まってしまい実質スクロールが起きず、
+     見出し行はページと一緒に流れて行ってしまう。そこで、縦固定を効かせたい表だけ
+     このクラスで明示的に高さを制限し、表自身の中でスクロールするようにする。 */
+  .table-wrap.scroll-y-frozen{max-height:72vh;overflow-y:auto;}
   table{border-collapse:collapse;width:100%;font-size:11.5px;}
-  thead th{background:var(--charcoal);color:#EFE5D6;padding:7px 6px;text-align:center;font-weight:700;white-space:nowrap;}
-  thead th.name-col{text-align:left;padding-left:12px;position:sticky;left:0;z-index:3;background:var(--charcoal);}
+  thead th{background:var(--charcoal);color:#EFE5D6;padding:7px 6px;text-align:center;font-weight:700;white-space:nowrap;position:sticky;top:0;z-index:2;}
+  thead th.name-col{text-align:left;padding-left:12px;position:sticky;left:0;top:0;z-index:4;background:var(--charcoal);}
   thead tr.cat-row th{font-size:10.5px;background:var(--charcoal-2);border-left:2px solid var(--charcoal);}
   tbody td{padding:6px;text-align:center;border-bottom:1px solid var(--line);white-space:nowrap;}
   tbody td.name-col{text-align:left;padding-left:12px;font-weight:700;position:sticky;left:0;z-index:1;background:var(--card);box-shadow:2px 0 4px rgba(0,0,0,0.06);}
@@ -144,10 +151,10 @@
   table.pcard-table{border-collapse:collapse;width:100%;min-width:640px;}
   table.pcard-table td, table.pcard-table th{border:1px solid var(--line);}
   table.pcard-table td{padding:8px 6px;text-align:center;vertical-align:middle;font-size:12.5px;background:#fff;}
-  table.pcard-table td.cat-col{width:100px;font-weight:800;font-size:12.5px;text-align:center;padding:10px 6px;border-right:2px solid var(--charcoal);}
-  table.pcard-table td.item-col{width:150px;text-align:left;padding:8px 12px;font-weight:700;white-space:nowrap;}
+  table.pcard-table td.cat-col{width:100px;font-weight:800;font-size:12.5px;text-align:center;padding:10px 6px;border-right:2px solid var(--charcoal);position:sticky;left:0;z-index:1;}
+  table.pcard-table td.item-col{width:150px;text-align:left;padding:8px 12px;font-weight:700;white-space:nowrap;position:sticky;left:100px;z-index:1;}
   table.pcard-table th{padding:9px 6px;text-align:center;background:var(--charcoal);color:#EFE5D6;font-size:12.5px;white-space:nowrap;}
-  table.pcard-table th.item-col-head{text-align:left;padding-left:12px;}
+  table.pcard-table th.item-col-head{text-align:left;padding-left:12px;position:sticky;left:0;z-index:2;}
   .pcard-score{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;font-weight:800;font-size:13px;border:2px solid var(--line);color:var(--muted);}
   .pcard-score.ready{background:var(--green-bg);color:var(--green);border-color:var(--green);}
   .pcard-score.mid{background:var(--training-bg);color:var(--training);border-color:var(--training);}
@@ -545,6 +552,31 @@ function isCurrentUserAdmin(){
 
 
 /* ---------- ログイン中の表示・ログアウト(操作者は実際のログインアカウントから自動判定) ---------- */
+function openPasswordChangeModal(){
+  showTwoInputModal(
+    "パスワードを変更するには、現在のパスワードの確認が必要です。",
+    async (currentPassword, newPassword, close)=>{
+      if(!currentPassword){ throw new Error("現在のパスワードを入力してください。"); }
+      if(!newPassword || newPassword.length < 6){ throw new Error("新しいパスワードは6文字以上にしてください。"); }
+      try{
+        const cred = EmailAuthProvider.credential(auth.currentUser.email, currentPassword);
+        await reauthenticateWithCredential(auth.currentUser, cred);
+        await updatePassword(auth.currentUser, newPassword);
+      }catch(e){
+        if(e.code === "auth/wrong-password" || e.code === "auth/invalid-credential"){
+          throw new Error("現在のパスワードが正しくありません。");
+        }
+        if(e.code === "auth/too-many-requests"){
+          throw new Error("試行回数が多すぎます。しばらく経ってからもう一度お試しください。");
+        }
+        throw new Error("変更に失敗しました:" + (e.message||""));
+      }
+      close();
+      showToast("パスワードを変更しました");
+    },
+    {confirmLabel:"変更する"}
+  );
+}
 function renderUserPicker(){
   const box = document.createElement("div");
   box.style.cssText = "display:flex;align-items:center;gap:8px;font-size:11px;color:#C8BBA8;white-space:nowrap;flex:none;";
@@ -555,31 +587,7 @@ function renderUserPicker(){
   const pwBtn = document.createElement("button");
   pwBtn.className = "logout-btn";
   pwBtn.textContent = "パスワード変更";
-  pwBtn.onclick = ()=>{
-    showTwoInputModal(
-      "パスワードを変更するには、現在のパスワードの確認が必要です。",
-      async (currentPassword, newPassword, close)=>{
-        if(!currentPassword){ throw new Error("現在のパスワードを入力してください。"); }
-        if(!newPassword || newPassword.length < 6){ throw new Error("新しいパスワードは6文字以上にしてください。"); }
-        try{
-          const cred = EmailAuthProvider.credential(auth.currentUser.email, currentPassword);
-          await reauthenticateWithCredential(auth.currentUser, cred);
-          await updatePassword(auth.currentUser, newPassword);
-        }catch(e){
-          if(e.code === "auth/wrong-password" || e.code === "auth/invalid-credential"){
-            throw new Error("現在のパスワードが正しくありません。");
-          }
-          if(e.code === "auth/too-many-requests"){
-            throw new Error("試行回数が多すぎます。しばらく経ってからもう一度お試しください。");
-          }
-          throw new Error("変更に失敗しました:" + (e.message||""));
-        }
-        close();
-        showToast("パスワードを変更しました");
-      },
-      {confirmLabel:"変更する"}
-    );
-  };
+  pwBtn.onclick = openPasswordChangeModal;
   box.appendChild(pwBtn);
   const logoutBtn = document.createElement("button");
   logoutBtn.className = "logout-btn";
@@ -764,6 +772,90 @@ function renderYearPicker(){
   return box;
 }
 
+let topMenuOpen = false; // モバイル表示でのヘッダー「⋮」メニュー開閉状態
+function renderTopRightContent(){
+  if(displayMode !== "mobile"){
+    const wrap = document.createElement("div");
+    wrap.style.cssText = "display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:none;";
+    wrap.appendChild(renderYearPicker());
+    wrap.appendChild(renderUserPicker());
+    return wrap;
+  }
+
+  // スマホ表示: 年度・ログイン関連は「⋮」1つにまとめ、普段は最小限の表示にする
+  const wrap = document.createElement("div");
+  wrap.style.cssText = "position:relative;flex:none;";
+  const moreBtn = document.createElement("button");
+  moreBtn.textContent = "⋮";
+  moreBtn.style.cssText = "background:transparent;border:1px solid rgba(255,255,255,.35);color:#EFE5D6;border-radius:20px;padding:4px 16px;font-size:17px;font-weight:900;cursor:pointer;font-family:inherit;line-height:1;";
+  moreBtn.onclick = ()=>{ topMenuOpen = !topMenuOpen; render(); };
+  wrap.appendChild(moreBtn);
+
+  if(topMenuOpen){
+    const panel = document.createElement("div");
+    panel.style.cssText = "position:absolute;left:0;top:100%;margin-top:6px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.24);z-index:50;min-width:230px;max-width:calc(100vw - 40px);padding:14px;display:flex;flex-direction:column;gap:10px;text-align:left;";
+
+    const yearRow = document.createElement("div");
+    yearRow.style.cssText = "display:flex;align-items:center;gap:8px;";
+    const yearLbl = document.createElement("span");
+    yearLbl.style.cssText = "font-size:12px;color:var(--muted);font-weight:700;flex:none;";
+    yearLbl.textContent = "年度:";
+    yearRow.appendChild(yearLbl);
+    const sel = document.createElement("select");
+    sel.style.cssText = "flex:1;font-size:12.5px;padding:5px 6px;";
+    sel.innerHTML = state.years.map(y=>`<option value="${y}" ${selectedYear===y?"selected":""}>${y}年度</option>`).join("");
+    sel.onchange = ()=>{ selectedYear = sel.value; render(); };
+    yearRow.appendChild(sel);
+    panel.appendChild(yearRow);
+
+    if(isCurrentUserAdmin()){
+      const nextYear = String(Math.max(...state.years.map(Number)) + 1);
+      const addBtn2 = document.createElement("button");
+      addBtn2.textContent = `+ ${nextYear}年度へ移行`;
+      addBtn2.style.cssText = "background:transparent;border:1px solid var(--ember);color:var(--ember-dark);border-radius:20px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;";
+      addBtn2.onclick = ()=>{
+        topMenuOpen = false;
+        showModal(`${nextYear}年度を新しく追加します。全スタッフの評価データが未入力の状態で作成されます。よろしいですか?`, ()=>{
+          state.staff.forEach(st=>{ st.yearData[nextYear] = emptyPeriods(); });
+          state.years.push(nextYear);
+          selectedYear = nextYear;
+          saveState();
+          render();
+        }, {confirmLabel:"追加する"});
+      };
+      panel.appendChild(addBtn2);
+    }
+
+    const hr = document.createElement("div");
+    hr.style.cssText = "border-top:1px solid var(--line);margin:2px 0;";
+    panel.appendChild(hr);
+
+    const loginLbl = document.createElement("div");
+    loginLbl.style.cssText = "font-size:12.5px;color:var(--muted);";
+    loginLbl.textContent = currentPersonName ? `ログイン中: ${currentPersonName}さん` : "ログイン中: (照合不可)";
+    panel.appendChild(loginLbl);
+
+    const pwBtn = document.createElement("button");
+    pwBtn.textContent = "パスワード変更";
+    pwBtn.style.cssText = "background:#fff;border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:8px 12px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;text-align:left;";
+    pwBtn.onclick = ()=>{
+      topMenuOpen = false;
+      render();
+      openPasswordChangeModal();
+    };
+    panel.appendChild(pwBtn);
+
+    const logoutBtn = document.createElement("button");
+    logoutBtn.textContent = "ログアウト";
+    logoutBtn.style.cssText = "background:#fff;border:1px solid #B23A2E;color:#B23A2E;border-radius:8px;padding:8px 12px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;text-align:left;";
+    logoutBtn.onclick = ()=> signOut(auth);
+    panel.appendChild(logoutBtn);
+
+    wrap.appendChild(panel);
+  }
+  return wrap;
+}
+
 /* ---------- 変更履歴の記録 ---------- */
 /* 評価スコア以外の重要な変更(管理者権限の付与・剥奪、シフトデータの削除など)を
    変更履歴に記録するための汎用ヘルパー。diffAndLogと同じ形式のエントリを1件追加する。 */
@@ -818,7 +910,7 @@ function renderTabs(){
     const b = document.createElement("button");
     b.textContent = t.label;
     b.className = t.id===activeTab ? "active" : "";
-    b.onclick = ()=>{ editingForm = false; activeTab = t.id; render(); };
+    b.onclick = ()=>{ editingForm = false; topMenuOpen = false; openStaffActionMenuId = null; activeTab = t.id; render(); };
     nav.appendChild(b);
   });
 }
@@ -920,8 +1012,7 @@ function render(){
   applyDefaultYearAndPeriod();
   const topSlot = document.getElementById("top-right-slot");
   topSlot.innerHTML = "";
-  topSlot.appendChild(renderYearPicker());
-  topSlot.appendChild(renderUserPicker());
+  topSlot.appendChild(renderTopRightContent());
   const main = document.getElementById("main");
   main.innerHTML = "";
   if(activeTab==="dashboard")  main.appendChild(renderDashboard());
@@ -1001,7 +1092,7 @@ function renderDashboard(){
   const card = document.createElement("div");
   card.className = "card";
   const tableWrap = document.createElement("div");
-  tableWrap.className = "table-wrap";
+  tableWrap.className = "table-wrap scroll-y-frozen";
   const table = document.createElement("table");
 
   const s = sortState;
@@ -1177,6 +1268,7 @@ function renderDashboard(){
 /* ---------- ATS評価入力(紙の評価票と同じ表レイアウト・4期間分の履歴を保持) ---------- */
 let entrySelectedId = null;
 let editingStaffId = null; // スタッフマスタでの編集中スタッフID(再描画をまたいで保持する必要があるためトップレベル)
+let openStaffActionMenuId = null; // スマホ表示で「⋮」メニューを開いているスタッフID
 /* 名前で絞り込める検索欄。プルダウンだと人数が多い時に探しづらいための代替。
    input+datalistではなく自前でドロップダウンパネルを描画している(iOS Safariでdatalistの候補が
    ほぼ表示されない/不安定という問題があるため、どの端末でも同じ見た目・動きになるようにした)。 */
@@ -2625,75 +2717,111 @@ const STATUS_META = {
         : `<span class="aff-chip" style="background:var(--gray-bg);color:var(--gray-ink);">未設定</span>`}</td>
     `;
     const actionTd = document.createElement("td");
-    actionTd.style.textAlign = "right";
+    actionTd.style.cssText = "text-align:right;position:relative;";
     const actionGroup = document.createElement("div");
     actionGroup.className = "btn-group";
     actionGroup.style.justifyContent = "flex-end";
+    const pillStyle = "background:#fff;border:1px solid var(--line);color:var(--muted);border-radius:20px;padding:5px 14px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;";
     const editStaffBtn = document.createElement("button");
     editStaffBtn.textContent = "編集";
-    editStaffBtn.style.cssText = "background:#fff;border:1px solid var(--line);color:var(--muted);border-radius:20px;padding:5px 14px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;";
+    editStaffBtn.style.cssText = pillStyle;
     editStaffBtn.onclick = ()=>{ editingStaffId = st.id; render(); };
     actionGroup.appendChild(editStaffBtn);
+
+    // 編集以外の操作(休職/退職・ログイン設定・設定済みにする)は、内容が同じでも
+    // デスクトップは並べて表示・スマホでは「⋮」1つにまとめて表示を変える。
+    const extraActions = [];
     [{key:"leave", label:"休職"}, {key:"resigned", label:"退職"}].forEach(opt=>{
-      const btn = document.createElement("button");
-      btn.textContent = opt.label;
       const isOn = st.status === opt.key;
-      btn.className = isOn ? "active" : "";
-      btn.onclick = ()=>{
-        const nextStatus = isOn ? "active" : opt.key;
-        const msg = nextStatus==="active"
-          ? `${st.name}さんを在籍に戻します。`
-          : nextStatus==="resigned"
-          ? `${st.name}さんを退職にします。過去の評価データは残りますが、ATS評価-全体・評価入力の対象一覧からは初期状態で除外されます。`
-          : `${st.name}さんを休職にします。ATS評価-全体・評価入力の対象一覧からは初期状態で除外されます(データは残ります)。`;
-        showModal(msg, ()=>{
-          st.status = nextStatus;
-          saveState();
-          render();
-        }, {confirmLabel: nextStatus==="active" ? "在籍に戻す" : opt.label + "にする"});
-      };
-      actionGroup.appendChild(btn);
-    });
-    const loginBtn = document.createElement("button");
-    loginBtn.textContent = st.hasLogin ? "ログイン再設定" : "ログイン設定";
-    loginBtn.style.cssText = "background:#fff;border:1px solid var(--line);color:var(--muted);border-radius:20px;padding:5px 14px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;";
-    loginBtn.onclick = ()=>{
-      showInputModal(
-        `${st.name}さん(社員CD: ${st.code})のログインパスワードを設定します。\n6文字以上で入力してください。${st.hasLogin ? "\n※既に設定済みのようです。パスワードの再設定(リセット)は現在の仕組みではできません。" : ""}`,
-        async (password, close)=>{
-          if(!password || password.length < 6){ throw new Error("パスワードは6文字以上にしてください(Firebaseの制限です)。"); }
-          try{
-            await createLoginAccount(st.code, password);
-          }catch(e){
-            throw new Error(e.code==="auth/email-already-in-use" ? "このスタッフのログインは既に設定済みです。" : ("作成に失敗しました:" + (e.message||"")));
-          }
-          st.hasLogin = true;
-          await saveState();
-          close();
-          showToast(`${st.name}さんのログインを設定しました`);
-          render();
-        },
-        {inputType:"password", placeholder:"新しいパスワード", confirmLabel:"設定する"}
-      );
-    };
-    actionGroup.appendChild(loginBtn);
-    if(!st.hasLogin){
-      const markBtn = document.createElement("button");
-      markBtn.textContent = "設定済みにする";
-      markBtn.title = "以前から実際にはログインアカウントがある場合、この記録だけを直します";
-      markBtn.style.cssText = "background:#fff;border:1px solid var(--line);color:var(--muted);border-radius:20px;padding:5px 14px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;";
-      markBtn.onclick = ()=>{
-        showModal(
-          `${st.name}さんは、以前から実際にはログインアカウントを作成済みですか?\nこの操作はアプリ側の表示だけを直すもので、新しくアカウントを作るわけではありません。`,
-          ()=>{
-            st.hasLogin = true;
+      extraActions.push({
+        label: isOn ? "在籍に戻す" : opt.label,
+        active: isOn,
+        run: ()=>{
+          const nextStatus = isOn ? "active" : opt.key;
+          const msg = nextStatus==="active"
+            ? `${st.name}さんを在籍に戻します。`
+            : nextStatus==="resigned"
+            ? `${st.name}さんを退職にします。過去の評価データは残りますが、ATS評価-全体・評価入力の対象一覧からは初期状態で除外されます。`
+            : `${st.name}さんを休職にします。ATS評価-全体・評価入力の対象一覧からは初期状態で除外されます(データは残ります)。`;
+          showModal(msg, ()=>{
+            st.status = nextStatus;
             saveState();
             render();
+          }, {confirmLabel: nextStatus==="active" ? "在籍に戻す" : opt.label + "にする"});
+        },
+      });
+    });
+    extraActions.push({
+      label: st.hasLogin ? "ログイン再設定" : "ログイン設定",
+      run: ()=>{
+        showInputModal(
+          `${st.name}さん(社員CD: ${st.code})のログインパスワードを設定します。\n6文字以上で入力してください。${st.hasLogin ? "\n※既に設定済みのようです。パスワードの再設定(リセット)は現在の仕組みではできません。" : ""}`,
+          async (password, close)=>{
+            if(!password || password.length < 6){ throw new Error("パスワードは6文字以上にしてください(Firebaseの制限です)。"); }
+            try{
+              await createLoginAccount(st.code, password);
+            }catch(e){
+              throw new Error(e.code==="auth/email-already-in-use" ? "このスタッフのログインは既に設定済みです。" : ("作成に失敗しました:" + (e.message||"")));
+            }
+            st.hasLogin = true;
+            await saveState();
+            close();
+            showToast(`${st.name}さんのログインを設定しました`);
+            render();
           },
-          {confirmLabel:"設定済みにする"}
+          {inputType:"password", placeholder:"新しいパスワード", confirmLabel:"設定する"}
         );
-      };
-      actionGroup.appendChild(markBtn);
+      },
+    });
+    if(!st.hasLogin){
+      extraActions.push({
+        label: "設定済みにする",
+        title: "以前から実際にはログインアカウントがある場合、この記録だけを直します",
+        run: ()=>{
+          showModal(
+            `${st.name}さんは、以前から実際にはログインアカウントを作成済みですか?\nこの操作はアプリ側の表示だけを直すもので、新しくアカウントを作るわけではありません。`,
+            ()=>{
+              st.hasLogin = true;
+              saveState();
+              render();
+            },
+            {confirmLabel:"設定済みにする"}
+          );
+        },
+      });
+    }
+
+    if(displayMode === "mobile"){
+      const moreBtn = document.createElement("button");
+      moreBtn.textContent = "⋮";
+      moreBtn.style.cssText = pillStyle + "font-size:15px;font-weight:900;padding:5px 12px;";
+      moreBtn.onclick = ()=>{ openStaffActionMenuId = (openStaffActionMenuId===st.id ? null : st.id); render(); };
+      actionGroup.appendChild(moreBtn);
+
+      if(openStaffActionMenuId === st.id){
+        const menu = document.createElement("div");
+        menu.style.cssText = "position:absolute;right:0;top:100%;margin-top:4px;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.16);z-index:20;min-width:170px;overflow:hidden;text-align:left;";
+        extraActions.forEach(a=>{
+          const item = document.createElement("button");
+          item.textContent = a.label;
+          if(a.title) item.title = a.title;
+          item.style.cssText = "display:block;width:100%;text-align:left;background:#fff;border:none;border-bottom:1px solid var(--line);color:" + (a.active ? "var(--ember-dark)" : "var(--ink)") + ";padding:10px 14px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;";
+          item.onclick = ()=>{ openStaffActionMenuId = null; a.run(); };
+          menu.appendChild(item);
+        });
+        if(menu.lastChild) menu.lastChild.style.borderBottom = "none";
+        actionTd.appendChild(menu);
+      }
+    } else {
+      extraActions.forEach(a=>{
+        const btn = document.createElement("button");
+        btn.textContent = a.label;
+        if(a.title) btn.title = a.title;
+        btn.className = a.active ? "active" : "";
+        btn.style.cssText = a.active ? "" : pillStyle;
+        btn.onclick = a.run;
+        actionGroup.appendChild(btn);
+      });
     }
     actionTd.appendChild(actionGroup);
     tr.appendChild(actionTd);
