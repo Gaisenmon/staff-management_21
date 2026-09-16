@@ -111,10 +111,18 @@
   .dot{width:10px;height:10px;border-radius:3px;display:inline-block;}
   .staff-picker{max-width:360px;margin-bottom:14px;}
   label{font-size:12px;color:var(--muted);font-weight:700;display:block;margin-bottom:5px;}
-  select, textarea{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;background:#fff;color:var(--ink);}
+  select, textarea, input[type=text], input[type=date], input[type=number], input[type=password], input[type=file]{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;background:#fff;color:var(--ink);box-sizing:border-box;}
   textarea{resize:vertical;min-height:90px;}
   .meta-row{display:flex;gap:20px;flex-wrap:wrap;margin-bottom:16px;font-size:12.5px;color:var(--muted);}
   .meta-row strong{color:var(--ink);}
+  .edit-form{background:var(--cream);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px;}
+  .edit-form .row2{display:flex;gap:10px;flex-wrap:wrap;}
+  .edit-form .row2 > div{min-width:140px;}
+  body.mobile-mode .edit-form .row2{flex-direction:column;}
+  body.mobile-mode .edit-form .row2 > div{min-width:0;}
+  .row{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px;}
+  .grow{flex:1;min-width:160px;}
+  body.mobile-mode .row{flex-direction:column;align-items:stretch;}
 
   /* 紙の評価票を模した表 */
   .paper-table-wrap{overflow-x:auto;border:1px solid var(--charcoal);border-radius:6px;}
@@ -757,6 +765,15 @@ function renderYearPicker(){
 }
 
 /* ---------- 変更履歴の記録 ---------- */
+/* 評価スコア以外の重要な変更(管理者権限の付与・剥奪、シフトデータの削除など)を
+   変更履歴に記録するための汎用ヘルパー。diffAndLogと同じ形式のエントリを1件追加する。 */
+function logGenericChange(staffName, field, oldValue, newValue){
+  state.history.unshift({
+    id: "h"+Date.now()+Math.random().toString(36).slice(2,6),
+    ts: new Date().toISOString(), user: currentPersonName || `(不明:${getLoginCode()})`,
+    staffName, year:"-", period:"-", field, oldValue, newValue,
+  });
+}
 function diffAndLog(staffObj, year, period, before, after){
   const entries = [];
   ALL_ITEMS.forEach(it=>{
@@ -2419,6 +2436,8 @@ function renderShifts(){
             delete shiftDataCache[d];
             if(shiftDateListCache) shiftDateListCache = shiftDateListCache.filter(x=>x!==d);
             if(shiftSelectedDate === d) shiftUploadStatus = null;
+            logGenericChange("(シフトデータ)", "削除", d, "-");
+            saveState();
             showToast(`${d}のシフトを削除しました`);
             render();
           }, {confirmLabel:"削除する"});
@@ -2817,6 +2836,7 @@ const STATUS_META = {
     removeBtn.title = "管理者から外す";
     removeBtn.onclick = ()=>{
       st.isAdmin = false;
+      logGenericChange(st.name, "管理者権限", "あり", "なし");
       saveState();
       render();
     };
@@ -2842,6 +2862,7 @@ const STATUS_META = {
     const target = state.staff.find(s=>s.id===adminAddSelect.value);
     if(!target) return;
     target.isAdmin = true;
+    logGenericChange(target.name, "管理者権限", "なし", "あり");
     saveState();
     render();
   };
