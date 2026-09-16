@@ -47,12 +47,12 @@
     font-size:11px;font-weight:700;border-radius:16px;cursor:pointer;font-family:inherit;
   }
   .mode-toggle button.active{background:var(--ember);color:#fff;}
-  body.mobile-mode .mode-toggle{align-self:flex-start;}
 
   /* ===== スマホ専用モード(PC版のレイアウトとは完全に切り離した見た目) ===== */
   body.mobile-mode header{padding:14px 14px 0 14px;}
   body.mobile-mode .brand{flex-direction:column;align-items:flex-start;gap:8px;justify-content:flex-start !important;}
   body.mobile-mode .brand h1{font-size:16px;}
+  body.mobile-mode .brand > div{align-self:flex-end;} /* パソコン/スマホ切替・「⋮」のかたまりを画面右上に寄せる */
   body.mobile-mode #top-right-slot{
     display:flex !important;flex-direction:row !important;flex-wrap:wrap;
     align-items:center !important;width:100%;gap:8px;
@@ -1060,12 +1060,15 @@ function renderDashboard(){
 
   const wrap = document.createElement("div");
   const titleRow = document.createElement("div");
-  titleRow.className = "title-row";
+  titleRow.style.cssText = "display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;";
   const h = document.createElement("h2");
   h.className = "title";
+  h.style.marginBottom = "0";
   h.textContent = `ATS評価-全体(${selectedYear}年度)`;
   titleRow.appendChild(h);
 
+  const filterRow = document.createElement("div");
+  filterRow.className = "title-row";
   const filterBtns = document.createElement("div");
   filterBtns.className = "btn-group";
   [{id:"all",label:"全て"},{id:"hall",label:"ホール"},{id:"kitchen",label:"キッチン"}].forEach(f=>{
@@ -1084,8 +1087,9 @@ function renderDashboard(){
   inactiveLabel.appendChild(inactiveCheck);
   inactiveLabel.appendChild(document.createTextNode("休職・退職者を含める"));
   filterBtns.appendChild(inactiveLabel);
-  titleRow.appendChild(filterBtns);
+  filterRow.appendChild(filterBtns);
   wrap.appendChild(titleRow);
+  wrap.appendChild(filterRow);
   const periodRow = renderPeriodButtons(dashboardPeriod, (p)=>{ dashboardPeriod = p; render(); });
   wrap.appendChild(periodRow);
 
@@ -1192,7 +1196,7 @@ function renderDashboard(){
     downloadCSV(`ATS評価_${selectedYear}年度_${dashboardPeriod}.csv`, rows);
   };
   exportBtn.style.marginLeft = "auto";
-  periodRow.appendChild(exportBtn);
+  titleRow.appendChild(exportBtn);
 
   const tbody = document.createElement("tbody");
   const affClass = (aff)=> aff==="ホール" ? "hall" : aff==="キッチン" ? "kitchen" : "both";
@@ -2717,10 +2721,10 @@ const STATUS_META = {
         : `<span class="aff-chip" style="background:var(--gray-bg);color:var(--gray-ink);">未設定</span>`}</td>
     `;
     const actionTd = document.createElement("td");
-    actionTd.style.cssText = "text-align:right;position:relative;";
+    actionTd.style.cssText = "text-align:right;position:relative;white-space:nowrap;";
     const actionGroup = document.createElement("div");
     actionGroup.className = "btn-group";
-    actionGroup.style.justifyContent = "flex-end";
+    actionGroup.style.cssText = "justify-content:flex-end;flex-wrap:nowrap;display:inline-flex;";
     const pillStyle = "background:#fff;border:1px solid var(--line);color:var(--muted);border-radius:20px;padding:5px 14px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;";
     const editStaffBtn = document.createElement("button");
     editStaffBtn.textContent = "編集";
