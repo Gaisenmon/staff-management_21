@@ -55,7 +55,8 @@
   body.mobile-mode .brand > div{align-self:flex-end;} /* パソコン/スマホ切替・「⋮」のかたまりを画面右上に寄せる */
   body.mobile-mode #top-right-slot{
     display:flex !important;flex-direction:row !important;flex-wrap:wrap;
-    align-items:center !important;width:100%;gap:8px;
+    align-items:center !important;justify-content:flex-end !important;width:100%;gap:8px;
+    order:-1; /* パソコン/スマホ切り替えより上に表示 */
   }
   body.mobile-mode .sync-row{font-size:10px;margin-bottom:8px;}
   /* タブは折り返さず横スクロールに(前のホール運営システムと同じ方式) */
@@ -793,7 +794,7 @@ function renderTopRightContent(){
 
   if(topMenuOpen){
     const panel = document.createElement("div");
-    panel.style.cssText = "position:absolute;left:0;top:100%;margin-top:6px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.24);z-index:50;min-width:230px;max-width:calc(100vw - 40px);padding:14px;display:flex;flex-direction:column;gap:10px;text-align:left;";
+    panel.style.cssText = "position:absolute;right:0;top:100%;margin-top:6px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.24);z-index:50;min-width:230px;max-width:calc(100vw - 40px);padding:14px;display:flex;flex-direction:column;gap:10px;text-align:left;";
 
     const yearRow = document.createElement("div");
     yearRow.style.cssText = "display:flex;align-items:center;gap:8px;";
