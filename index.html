@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>凱旋門 ATS評価システム</title>
+<title>凱旋門 ATS評価システム(プレビュー版)</title>
 <style>
   :root{
     --charcoal:#241E19;
@@ -90,12 +90,6 @@
   .period-row .lbl{font-size:12px;color:var(--muted);font-weight:700;}
   .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:18px;}
   .table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;}
-  /* thead(見出し行)を「縦スクロールしても固定」するには、position:stickyの基準となる
-     スクロールコンテナ自体が実際に縦スクロールしている必要がある。.table-wrapは
-     overflow-x:autoを付けた時点で(仕様上)overflow-yも暗黙にautoとして扱われるが、
-     高さの制限が無いと中身がそのまま収まってしまい実質スクロールが起きず、
-     見出し行はページと一緒に流れて行ってしまう。そこで、縦固定を効かせたい表だけ
-     このクラスで明示的に高さを制限し、表自身の中でスクロールするようにする。 */
   .table-wrap.scroll-y-frozen{max-height:72vh;overflow-y:auto;}
   table{border-collapse:collapse;width:100%;font-size:11.5px;}
   thead th{background:var(--charcoal);color:#EFE5D6;padding:7px 6px;text-align:center;font-weight:700;white-space:nowrap;position:sticky;top:0;z-index:2;}
@@ -176,7 +170,7 @@
     .card{border:none !important;box-shadow:none !important;padding:4px 0 !important;margin-bottom:4px !important;}
     table{break-inside:auto;}
     tr{break-inside:avoid;}
-    thead{display:table-header-group;} /* 表が複数ページにまたがる時、見出し行を各ページの先頭に繰り返す */
+    thead{display:table-header-group;}
   }
   .sync-row{display:flex;align-items:center;gap:10px;margin-bottom:12px;font-size:11px;color:#C8BBA8;}
   .sync-dot{width:8px;height:8px;border-radius:50%;background:#5EA36B;flex:none;}
@@ -203,17 +197,7 @@
 </style>
 </head>
 <body>
-<div class="login-screen" id="login-screen">
-  <div class="login-card">
-    <h2>凱旋門 ATS評価システム</h2>
-    <p>続けるにはログインが必要です</p>
-    <input type="text" id="login-code" placeholder="社員CD" autocomplete="username">
-    <input type="password" id="login-password" placeholder="パスワード" autocomplete="current-password">
-    <button class="primary" id="login-btn">ログイン</button>
-    <div class="login-error" id="login-error"></div>
-  </div>
-</div>
-<div class="app" id="app" style="display:none;">
+<div class="app" id="app">
   <header>
     <div class="brand" style="justify-content:space-between;align-items:flex-start;">
       <h1>凱旋門 ATS評価システム</h1>
@@ -225,7 +209,7 @@
         <div id="top-right-slot" style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:none;"></div>
       </div>
     </div>
-    <div class="sync-row"><span class="sync-dot" id="sync-dot"></span><span id="sync-label">同期状態を確認中...</span></div>
+    <div class="sync-row"><span class="sync-dot" id="sync-dot"></span><span id="sync-label">同期状態を確認中...</span><span style="background:var(--ember);color:#fff;border-radius:20px;padding:2px 10px;font-size:11px;font-weight:800;margin-left:6px;">プレビュー版(ログイン機能なし)</span></div>
     <nav id="tabs"></nav>
   </header>
   <main id="main"></main>
@@ -233,40 +217,7 @@
 <div class="save-toast" id="toast">保存しました</div>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script type="module">
-import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getDatabase, ref, set, get, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
-import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-
-/* ==============================================================
-   会社用(赤門)本番接続。akamo-staff-management プロジェクトに接続。
-   凱旋門店舗のホール運営システムとは別データ(ATS評価専用パス)を使う。
-   ============================================================== */
-const firebaseConfig = {
-  apiKey: "AIzaSyDzUmUoZsTpV8PlTU-qRyDiByOImpOc_Kk",
-  authDomain: "akamo-staff-management.firebaseapp.com",
-  databaseURL: "https://akamo-staff-management-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "akamo-staff-management",
-  storageBucket: "akamo-staff-management.firebasestorage.app",
-  messagingSenderId: "249759074777",
-  appId: "1:249759074777:web:4b9b5332d22dae182bf1c8"
-};
-const fbApp = initializeApp(firebaseConfig);
-const db = getDatabase(fbApp);
-/* ==============================================================
-   店舗展開用の設定値。新しい店舗にこのファイルをコピーする時は、
-   DEFAULT_STORE_ID をその店舗のIDに変更するだけでよい(他の行は触らない)。
-   ここを変え忘れると、他店舗のデータと同じ場所に保存されてしまい、
-   データが混ざる重大な事故につながるので、必ず店舗ごとに固有の値にすること。
-   (?store=xxx というURLパラメータでも一時的に上書きできる。動作確認用)
-   ============================================================== */
-const DEFAULT_STORE_ID = "gaisenmon"; // ← 千葉NT店。他店舗にコピーする時はここだけ変更する
-const STORE_ID = new URLSearchParams(window.location.search).get("store") || DEFAULT_STORE_ID;
-const stateRef = ref(db, `stores/${STORE_ID}/ats/state`); // ホール運営システムの stores/${STORE_ID}/state とは別パス
-const historyRef = ref(db, `stores/${STORE_ID}/ats/history`); // 変更履歴は増減が激しいので本体とは別パスに分離
-const auth = getAuth(fbApp);
-const LOGIN_DOMAIN = "gaisenmon.local";
-function codeToEmail(code){ return `${code.trim()}@${LOGIN_DOMAIN}`; }
+<script>
 
 /* ============================== 評価項目マスタ ============================== */
 const CATEGORIES = [
@@ -313,7 +264,10 @@ function emptyScores(){
 }
 function emptyPeriods(){
   const p = {};
-  PERIODS.forEach(period => { p[period] = { scores: emptyScores(), comment:"", evaluator:"", bonus:0, confirmed:false, exempt:false }; });
+  PERIODS.forEach(period => { p[period] = {
+    scores: emptyScores(), comment:"", evaluator:"", bonus:0, confirmed:false, exempt:false,
+    selfScores: emptyScores(), selfGoal:"", selfSubmitted:false, evaluatorGoal:"",
+  }; });
   return p;
 }
 
@@ -402,67 +356,100 @@ function computeTenureMonths(hireDateStr){
 const INITIAL_YEAR = "2026";
 function seedStaff(){
   return STAFF_SEED.map(s => ({
-    ...s, status:"active", isEvaluator: EVALUATOR_SEED_NAMES.includes(s.name), isEvaluatee:true, isAdmin:(s.employType==="社員" || s.name==="木内 健太"), hasLogin:false,
+    ...s, status:"active", isEvaluator: EVALUATOR_SEED_NAMES.some(n=>s.name.includes(n)), isEvaluatee:true, isAdmin:(s.employType==="社員" || s.name==="木内 健太"), hasLogin:false,
     yearData: { [INITIAL_YEAR]: emptyPeriods() },
   }));
 }
 
-/* ============================== 状態管理・共有保存(Firebase Realtime Databaseでリアルタイム共有) ============================== */
+/* ============================== 状態管理・共有保存(プレビュー版はwindow.storageで保持。本番版はFirebaseリアルタイム同期) ============================== */
+const STORAGE_KEY = "gaisenmon-ats-preview-core-v1";   // staff/years本体
+const HISTORY_STORAGE_KEY = "gaisenmon-ats-preview-history-v1"; // 変更履歴(増減が激しいので分離)
+const STORAGE_AVAILABLE = (typeof window!=="undefined" && !!window.storage);
 let state = null;
 let editingForm = false;
-let stateLoaded = false;
-let historyLoaded = false;
-let firstLoadDone = false;
+let lastSavedCoreJSON = "";
+let lastSavedHistoryJSON = "";
 
-/* 本体(staff/years)側の移行処理。履歴は別パスになったのでここでは扱わない。 */
 function migrateCoreState(s){
   if(!Array.isArray(s.staff)) s.staff = [];
   if(!s.years || s.years.length===0) s.years = [INITIAL_YEAR];
   s.staff.forEach(st=>{
     if(!st.status){ st.status = st.active===false ? "resigned" : "active"; }
-    if(st.isEvaluator === undefined){ st.isEvaluator = EVALUATOR_SEED_NAMES.includes(st.name); }
+    if(st.isEvaluator === undefined){ st.isEvaluator = EVALUATOR_SEED_NAMES.some(n=>st.name.includes(n)); }
     if(st.isEvaluatee === undefined){ st.isEvaluatee = true; } // 被評価者かどうか。デフォルトは全員対象
     if(st.isAdmin === undefined){ st.isAdmin = (st.employType === "社員") || st.name === "木内 健太"; } // 管理者かどうか。既存の社員+木内さんは自動でtrue
     if(st.hasLogin === undefined){ st.hasLogin = false; }
     if(st.yearData){
       Object.values(st.yearData).forEach(yd=>{
-        Object.values(yd).forEach(pd=>{ if(pd.exempt === undefined) pd.exempt = false; });
+        Object.values(yd).forEach(pd=>{
+          if(pd.exempt === undefined) pd.exempt = false;
+          if(!pd.selfScores) pd.selfScores = emptyScores();
+          if(pd.selfGoal === undefined) pd.selfGoal = "";
+          if(pd.selfSubmitted === undefined) pd.selfSubmitted = false;
+          if(pd.evaluatorGoal === undefined) pd.evaluatorGoal = "";
+        });
       });
     }
   });
   return s;
 }
 function defaultCoreState(){ return { staff: seedStaff(), years: [INITIAL_YEAR], updatedAt: null }; }
+async function loadState(){
+  const result = { staff: [], years: [INITIAL_YEAR], history: [], updatedAt: null };
+  if(!STORAGE_AVAILABLE){
+    const seed = defaultCoreState();
+    result.staff = seed.staff; result.years = seed.years;
+    return result;
+  }
+  let coreLoaded = false;
+  try{
+    const res = await window.storage.get(STORAGE_KEY, true);
+    if(res && res.value){
+      const core = migrateCoreState(JSON.parse(res.value));
+      result.staff = core.staff; result.years = core.years; result.updatedAt = core.updatedAt;
+      coreLoaded = true;
+    }
+  }catch(e){
+    // window.storage.get はキーがまだ存在しない場合、nullではなく例外を投げる仕様。
+    // ここに来るのは「まだ誰も保存していない(初回)」ケースなので、エラー扱いにはしない。
+  }
+  if(!coreLoaded){
+    const seed = defaultCoreState();
+    result.staff = seed.staff; result.years = seed.years;
+    try{ await window.storage.set(STORAGE_KEY, JSON.stringify(seed), true); }catch(e){}
+  }
+  try{
+    const histRes = await window.storage.get(HISTORY_STORAGE_KEY, true);
+    if(histRes && histRes.value) result.history = JSON.parse(histRes.value);
+  }catch(e){
+    // 履歴キーも同様、初回は存在しなくて正常。空のままでよい。
+  }
+  return result;
+}
+/* 直近にサーバー(共有保存先)から受け取った状態(=自分がまだ書き込んでいない基準点) */
+let lastServerCore = null;
+let lastServerHistory = null;
 
-/* 直近にサーバーから受け取った状態(=自分がまだ書き込んでいない基準点)。
-   これと今の手元の state を比べることで「自分が実際に何を触ったか」を判定する。 */
-let lastServerCore = null;   // {staff, years} の基準点
-let lastServerHistory = null; // history配列の基準点
-
-/* 保存直前にサーバーの最新データを取り直し、自分が実際に触った部分(スタッフ・年度)だけを
-   その最新データに重ねてから書き込む。
-   理由:「編集中は他人の更新を取り込まない」ガードのせいで、長時間編集している間に
-   他の人が保存した内容を、自分の保存時にまるごと上書きして消してしまう事故があったため。 */
+/* 保存直前に最新データを取り直し、自分が実際に触った部分(スタッフ・年度)だけを
+   その最新データに重ねてから書き込む。編集中は他人の更新を取り込まないガードのせいで、
+   長時間編集している間に他の人が保存した内容を、自分の保存時に消してしまう事故を防ぐ。 */
 function mergeStateForSave(latest, local, base){
   const merged = {...latest};
   const baseStaffMap = new Map((base?.staff||[]).map(s=>[s.id, s]));
   const localStaffMap = new Map((local.staff||[]).map(s=>[s.id, s]));
-  const mergedStaffMap = new Map((latest.staff||[]).map(s=>[s.id, s])); // 基本は最新データを採用
+  const mergedStaffMap = new Map((latest.staff||[]).map(s=>[s.id, s]));
   localStaffMap.forEach((localSt, id)=>{
     const baseSt = baseStaffMap.get(id);
     const changed = !baseSt || JSON.stringify(baseSt) !== JSON.stringify(localSt);
     if(changed || !mergedStaffMap.has(id)){
-      mergedStaffMap.set(id, localSt); // 自分が実際に触った(=基準点から変化した)人だけ、自分の値を優先
+      mergedStaffMap.set(id, localSt);
     }
   });
   merged.staff = Array.from(mergedStaffMap.values());
-  // 年度は増える一方の情報なので、両方を合わせる
   merged.years = Array.from(new Set([...(latest.years||[]), ...(local.years||[])])).sort();
   return merged;
 }
-/* 変更履歴は「追加」と「削除」だけのログなので、id単位の3-wayマージで正しく合成できる。
-   自分が追加した分は足す、自分が削除した分は(他人がまだ持っていても)消す、
-   それ以外(他人が追加/削除した分)は最新データをそのまま尊重する。 */
+/* 変更履歴は「追加」と「削除」だけのログなので、id単位の3-wayマージで正しく合成できる。 */
 function mergeHistoryForSave(latest, local, base){
   const baseIds = new Set((base||[]).map(h=>h.id));
   const localIds = new Set((local||[]).map(h=>h.id));
@@ -471,46 +458,49 @@ function mergeHistoryForSave(latest, local, base){
   const merged = (latest||[]).filter(h=>!deletedLocally.has(h.id));
   const mergedIds = new Set(merged.map(h=>h.id));
   addedLocally.forEach(h=>{ if(!mergedIds.has(h.id)){ merged.push(h); mergedIds.add(h.id); } });
-  merged.sort((a,b)=> (b.ts||"").localeCompare(a.ts||"")); // 新しい順
+  merged.sort((a,b)=> (b.ts||"").localeCompare(a.ts||""));
   return merged;
 }
 async function saveState(){
-  // ---- 本体(staff/years) ----
-  try{
-    const snap = await get(stateRef);
-    const latestRaw = snap.val();
-    if(latestRaw){
-      const merged = mergeStateForSave(migrateCoreState(latestRaw), {staff:state.staff, years:state.years}, lastServerCore);
-      state.staff = merged.staff;
-      state.years = merged.years;
-    }
-  }catch(e){
-    console.error("保存前の再取得に失敗。手元のデータでそのまま保存します", e);
+  if(STORAGE_AVAILABLE){
+    try{
+      const res = await window.storage.get(STORAGE_KEY, true);
+      if(res && res.value){
+        const merged = mergeStateForSave(migrateCoreState(JSON.parse(res.value)), {staff:state.staff, years:state.years}, lastServerCore);
+        state.staff = merged.staff;
+        state.years = merged.years;
+      }
+    }catch(e){ console.error("保存前の再取得に失敗。手元のデータでそのまま保存します", e); }
   }
   state.updatedAt = new Date().toISOString();
-  try{
-    await set(stateRef, { staff: state.staff, years: state.years, updatedAt: state.updatedAt });
-    lastServerCore = JSON.parse(JSON.stringify({staff: state.staff, years: state.years}));
-  }catch(e){
-    console.error("save failed", e);
-    showToast("保存に失敗しました");
-    return;
-  }
-
-  // ---- 変更履歴(別パス。頻繁に増減するので本体と分けて保存している) ----
-  const historyChangedLocally = JSON.stringify(lastServerHistory||[]) !== JSON.stringify(state.history||[]);
-  if(historyChangedLocally){
+  lastSavedCoreJSON = JSON.stringify({staff:state.staff, years:state.years, updatedAt:state.updatedAt});
+  if(STORAGE_AVAILABLE){
     try{
-      const histSnap = await get(historyRef);
-      const latestHistory = Array.isArray(histSnap.val()) ? histSnap.val() : [];
-      state.history = mergeHistoryForSave(latestHistory, state.history, lastServerHistory);
-      await set(historyRef, state.history);
-      lastServerHistory = JSON.parse(JSON.stringify(state.history));
-    }catch(e){
-      console.error("history save failed", e);
+      await window.storage.set(STORAGE_KEY, lastSavedCoreJSON, true);
+      lastServerCore = JSON.parse(JSON.stringify({staff:state.staff, years:state.years}));
+    }catch(e){ showToast("保存に失敗しました"); setSyncStatus(false); return; }
+
+    const historyChangedLocally = JSON.stringify(lastServerHistory||[]) !== JSON.stringify(state.history||[]);
+    if(historyChangedLocally){
+      try{
+        let latestHistory = [];
+        try{
+          const histRes = await window.storage.get(HISTORY_STORAGE_KEY, true);
+          if(histRes && histRes.value) latestHistory = JSON.parse(histRes.value);
+        }catch(e){
+          // 履歴キー未作成(初回)。空として扱い、この後のsetで新規作成する。
+        }
+        state.history = mergeHistoryForSave(latestHistory, state.history, lastServerHistory);
+        lastSavedHistoryJSON = JSON.stringify(state.history);
+        await window.storage.set(HISTORY_STORAGE_KEY, lastSavedHistoryJSON, true);
+        lastServerHistory = JSON.parse(JSON.stringify(state.history));
+      }catch(e){ console.error("history save failed", e); }
     }
+    showToast("保存しました(全員に共有されます)");
+    setSyncStatus(true);
+  } else {
+    showToast("この環境では共有保存が使えません(ローカルのみ)");
   }
-  showToast("保存しました(全員に共有されます)");
 }
 function showToast(msg){
   const t = document.getElementById("toast");
@@ -522,26 +512,47 @@ function showToast(msg){
 function setSyncStatus(ok){
   const dot = document.getElementById("sync-dot");
   const lbl = document.getElementById("sync-label");
+  if(!STORAGE_AVAILABLE){ dot.classList.add("off"); lbl.textContent = "共有同期なし(この表示環境では保存できません)"; return; }
   dot.classList.toggle("off", !ok);
   const t = state?.updatedAt ? new Date(state.updatedAt).toLocaleString("ja-JP",{hour:"2-digit",minute:"2-digit",month:"numeric",day:"numeric"}) : "-";
-  lbl.textContent = (ok ? `全員と同期中(リアルタイム) ・ 最終更新 ${t}` : "オフライン") + ` ・ 店舗: ${STORE_ID}`;
+  lbl.textContent = ok ? `全員と同期中 ・ 最終更新 ${t}` : "同期エラー";
+}
+async function pollForUpdates(){
+  if(!STORAGE_AVAILABLE) return;
+  let changed = false;
+  try{
+    const coreRes = await window.storage.get(STORAGE_KEY, true);
+    if(coreRes && coreRes.value && coreRes.value !== lastSavedCoreJSON){
+      if(editingForm) return;
+      const core = migrateCoreState(JSON.parse(coreRes.value));
+      state.staff = core.staff; state.years = core.years; state.updatedAt = core.updatedAt;
+      lastServerCore = JSON.parse(JSON.stringify({staff:state.staff, years:state.years}));
+      lastSavedCoreJSON = coreRes.value;
+      changed = true;
+    }
+  }catch(e){
+    // キー未作成(初回)の可能性があるため、これだけでは同期エラー扱いにしない
+  }
+  try{
+    const histRes = await window.storage.get(HISTORY_STORAGE_KEY, true);
+    if(histRes && histRes.value && histRes.value !== lastSavedHistoryJSON){
+      if(editingForm) return;
+      state.history = JSON.parse(histRes.value);
+      lastServerHistory = JSON.parse(JSON.stringify(state.history));
+      lastSavedHistoryJSON = histRes.value;
+      changed = true;
+    }
+  }catch(e){
+    // 同上
+  }
+  setSyncStatus(true);
+  if(changed) render();
 }
 
-/* ---- ログインコードから「今ログインしているのが誰か」を自動判定する ---- */
-let currentPersonName = null;
-function getLoginCode(){
-  const email = auth.currentUser?.email || "";
-  return email.split("@")[0];
-}
-function resolveCurrentPersonName(){
-  if(!state) return null;
-  const code = String(getLoginCode());
-  const match = (state.staff||[]).find(s=>String(s.code)===code);
-  return match ? match.name : null;
-}
-/* 権限まわり:今ログインしている人のスタッフレコードと、その人が管理者かどうか。
-   まだサーバー側(Firebaseセキュリティルール)では強制していない「見た目レベル」の制御で、
-   本当の意味でのアクセス制御ではない点に注意(開発者ツールから操作すれば技術的には回避できる)。 */
+/* ---- プレビュー版は実ログインがないため、以前と同じ「操作者」手動選択に戻す ---- */
+let currentPersonName = null; // 未使用(本番版との互換のため残置)
+/* 権限まわり:今操作者に選ばれている人のスタッフレコードと、その人が管理者かどうか。
+   まだサーバー側では強制していない「見た目レベル」の制御である点に注意。 */
 function currentStaffObj(){
   if(!state) return null;
   return (state.staff||[]).find(s=>s.name===currentPersonName) || null;
@@ -553,48 +564,19 @@ function isCurrentUserAdmin(){
 
 
 /* ---------- ログイン中の表示・ログアウト(操作者は実際のログインアカウントから自動判定) ---------- */
-function openPasswordChangeModal(){
-  showTwoInputModal(
-    "パスワードを変更するには、現在のパスワードの確認が必要です。",
-    async (currentPassword, newPassword, close)=>{
-      if(!currentPassword){ throw new Error("現在のパスワードを入力してください。"); }
-      if(!newPassword || newPassword.length < 6){ throw new Error("新しいパスワードは6文字以上にしてください。"); }
-      try{
-        const cred = EmailAuthProvider.credential(auth.currentUser.email, currentPassword);
-        await reauthenticateWithCredential(auth.currentUser, cred);
-        await updatePassword(auth.currentUser, newPassword);
-      }catch(e){
-        if(e.code === "auth/wrong-password" || e.code === "auth/invalid-credential"){
-          throw new Error("現在のパスワードが正しくありません。");
-        }
-        if(e.code === "auth/too-many-requests"){
-          throw new Error("試行回数が多すぎます。しばらく経ってからもう一度お試しください。");
-        }
-        throw new Error("変更に失敗しました:" + (e.message||""));
-      }
-      close();
-      showToast("パスワードを変更しました");
-    },
-    {confirmLabel:"変更する"}
-  );
-}
 function renderUserPicker(){
   const box = document.createElement("div");
   box.style.cssText = "display:flex;align-items:center;gap:8px;font-size:11px;color:#C8BBA8;white-space:nowrap;flex:none;";
   const lbl = document.createElement("span");
   lbl.style.whiteSpace = "nowrap";
-  lbl.textContent = currentPersonName ? `ログイン中: ${currentPersonName}さん` : "ログイン中: (照合不可)";
+  lbl.textContent = "操作者:";
   box.appendChild(lbl);
-  const pwBtn = document.createElement("button");
-  pwBtn.className = "logout-btn";
-  pwBtn.textContent = "パスワード変更";
-  pwBtn.onclick = openPasswordChangeModal;
-  box.appendChild(pwBtn);
-  const logoutBtn = document.createElement("button");
-  logoutBtn.className = "logout-btn";
-  logoutBtn.textContent = "ログアウト";
-  logoutBtn.onclick = ()=> signOut(auth);
-  box.appendChild(logoutBtn);
+  const sel = document.createElement("select");
+  sel.style.cssText = "font-size:11.5px;padding:2px 6px;border-radius:6px;border:1px solid rgba(255,255,255,.3);background:#fff;color:var(--ink);white-space:nowrap;";
+  const candidateNames = state ? state.staff.filter(s=>s.isEvaluator).map(s=>s.name) : [];
+  sel.innerHTML = `<option value="">未選択</option>` + candidateNames.map(n=>`<option value="${n}" ${currentPersonName===n?"selected":""}>${n}</option>`).join("");
+  sel.onchange = ()=>{ currentPersonName = sel.value || null; };
+  box.appendChild(sel);
   return box;
 }
 
@@ -673,73 +655,6 @@ function showInputModal(message, onSubmit, opts){
   input.focus();
 }
 
-/* showInputModalの2項目版(現在のパスワード+新しいパスワードの入力に使用)。 */
-function showTwoInputModal(message, onSubmit, opts){
-  opts = opts || {};
-  const overlay = document.createElement("div");
-  overlay.style.cssText = "position:fixed;inset:0;background:rgba(36,30,25,0.55);z-index:200;display:flex;align-items:center;justify-content:center;padding:20px;";
-  const box = document.createElement("div");
-  box.style.cssText = "background:#fff;border-radius:14px;padding:22px;max-width:380px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.28);";
-  const msg = document.createElement("div");
-  msg.style.cssText = "font-size:14px;line-height:1.7;color:var(--ink);margin-bottom:14px;white-space:pre-wrap;";
-  msg.textContent = message;
-  box.appendChild(msg);
-  const input1 = document.createElement("input");
-  input1.type = "password";
-  input1.placeholder = "現在のパスワード";
-  input1.autocomplete = "current-password";
-  input1.style.cssText = "width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;margin-bottom:8px;box-sizing:border-box;";
-  box.appendChild(input1);
-  const input2 = document.createElement("input");
-  input2.type = "password";
-  input2.placeholder = "新しいパスワード(6文字以上)";
-  input2.autocomplete = "new-password";
-  input2.style.cssText = "width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;margin-bottom:8px;box-sizing:border-box;";
-  box.appendChild(input2);
-  const errEl = document.createElement("div");
-  errEl.style.cssText = "color:#B23A2E;font-size:12.5px;margin-bottom:8px;min-height:16px;";
-  box.appendChild(errEl);
-  const btnRow = document.createElement("div");
-  btnRow.style.cssText = "display:flex;justify-content:flex-end;gap:10px;";
-  const cancelBtn = document.createElement("button");
-  cancelBtn.textContent = opts.cancelLabel || "キャンセル";
-  cancelBtn.style.cssText = "background:#fff;border:1px solid var(--line);color:var(--muted);border-radius:8px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;";
-  cancelBtn.onclick = ()=> overlay.remove();
-  const okBtn = document.createElement("button");
-  okBtn.className = "primary";
-  okBtn.textContent = opts.confirmLabel || "OK";
-  okBtn.onclick = async ()=>{
-    errEl.textContent = "";
-    okBtn.disabled = true;
-    try{
-      await onSubmit(input1.value, input2.value, ()=> overlay.remove());
-    }catch(e){
-      errEl.textContent = e.message || "エラーが発生しました";
-      okBtn.disabled = false;
-    }
-  };
-  input2.addEventListener("keydown", (e)=>{ if(e.key==="Enter") okBtn.click(); });
-  btnRow.appendChild(cancelBtn);
-  btnRow.appendChild(okBtn);
-  box.appendChild(btnRow);
-  overlay.appendChild(box);
-  document.body.appendChild(overlay);
-  input1.focus();
-}
-
-/* 管理者(今ログイン中の人)のセッションを維持したまま、新しいログインアカウントを作成する。
-   同じFirebaseアプリのAuthで直接作成すると管理者自身が新アカウントに切り替わってしまうため、
-   一時的な別インスタンスを作ってそこで作成し、使い終わったら破棄する。 */
-async function createLoginAccount(code, password){
-  const tempApp = initializeApp(firebaseConfig, "temp-"+Date.now());
-  const tempAuth = getAuth(tempApp);
-  try{
-    await createUserWithEmailAndPassword(tempAuth, codeToEmail(code), password);
-  } finally {
-    await deleteApp(tempApp);
-  }
-}
-
 /* ---------- 年度選択(ページ全体で共有) ---------- */
 let selectedYear = null;
 function renderYearPicker(){
@@ -783,7 +698,6 @@ function renderTopRightContent(){
     return wrap;
   }
 
-  // スマホ表示: 年度・ログイン関連は「⋮」1つにまとめ、普段は最小限の表示にする
   const wrap = document.createElement("div");
   wrap.style.cssText = "position:relative;flex:none;";
   const moreBtn = document.createElement("button");
@@ -831,26 +745,16 @@ function renderTopRightContent(){
     hr.style.cssText = "border-top:1px solid var(--line);margin:2px 0;";
     panel.appendChild(hr);
 
-    const loginLbl = document.createElement("div");
-    loginLbl.style.cssText = "font-size:12.5px;color:var(--muted);";
-    loginLbl.textContent = currentPersonName ? `ログイン中: ${currentPersonName}さん` : "ログイン中: (照合不可)";
-    panel.appendChild(loginLbl);
-
-    const pwBtn = document.createElement("button");
-    pwBtn.textContent = "パスワード変更";
-    pwBtn.style.cssText = "background:#fff;border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:8px 12px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;text-align:left;";
-    pwBtn.onclick = ()=>{
-      topMenuOpen = false;
-      render();
-      openPasswordChangeModal();
-    };
-    panel.appendChild(pwBtn);
-
-    const logoutBtn = document.createElement("button");
-    logoutBtn.textContent = "ログアウト";
-    logoutBtn.style.cssText = "background:#fff;border:1px solid #B23A2E;color:#B23A2E;border-radius:8px;padding:8px 12px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;text-align:left;";
-    logoutBtn.onclick = ()=> signOut(auth);
-    panel.appendChild(logoutBtn);
+    const opLbl = document.createElement("span");
+    opLbl.style.cssText = "font-size:12px;color:var(--muted);font-weight:700;";
+    opLbl.textContent = "操作者:";
+    panel.appendChild(opLbl);
+    const opSel = document.createElement("select");
+    opSel.style.cssText = "font-size:12.5px;padding:5px 6px;";
+    const candidateNames = state ? state.staff.filter(s=>s.isEvaluator).map(s=>s.name) : [];
+    opSel.innerHTML = `<option value="">未選択</option>` + candidateNames.map(n=>`<option value="${n}" ${currentPersonName===n?"selected":""}>${n}</option>`).join("");
+    opSel.onchange = ()=>{ currentPersonName = opSel.value || null; render(); };
+    panel.appendChild(opSel);
 
     wrap.appendChild(panel);
   }
@@ -863,7 +767,7 @@ function renderTopRightContent(){
 function logGenericChange(staffName, field, oldValue, newValue){
   state.history.unshift({
     id: "h"+Date.now()+Math.random().toString(36).slice(2,6),
-    ts: new Date().toISOString(), user: currentPersonName || `(不明:${getLoginCode()})`,
+    ts: new Date().toISOString(), user: currentPersonName || "(未選択)",
     staffName, year:"-", period:"-", field, oldValue, newValue,
   });
 }
@@ -876,6 +780,7 @@ function diffAndLog(staffObj, year, period, before, after){
   if((before.bonus ?? 0) !== (after.bonus ?? 0)) entries.push({field:"加点", oldValue:String(before.bonus ?? 0), newValue:String(after.bonus ?? 0)});
   if((before.evaluator || "") !== (after.evaluator || "")) entries.push({field:"評価者", oldValue: before.evaluator || "(未選択)", newValue: after.evaluator || "(未選択)"});
   if((before.comment || "") !== (after.comment || "")) entries.push({field:"コメント", oldValue:"(変更前あり)", newValue:"(変更後あり)"});
+  if((before.evaluatorGoal || "") !== (after.evaluatorGoal || "")) entries.push({field:"目標設定", oldValue:"(変更前あり)", newValue:"(変更後あり)"});
   if(!!before.confirmed !== !!after.confirmed) entries.push({field:"ステータス", oldValue: before.confirmed ? "確定" : "編集中", newValue: after.confirmed ? "確定" : "編集中"});
   if(!!before.exempt !== !!after.exempt) entries.push({field:"評価対象外", oldValue: before.exempt ? "対象外" : "対象内", newValue: after.exempt ? "対象外" : "対象内"});
   if(entries.length===0) return;
@@ -883,14 +788,14 @@ function diffAndLog(staffObj, year, period, before, after){
   entries.forEach(e=>{
     state.history.unshift({
       id: "h"+Date.now()+Math.random().toString(36).slice(2,6),
-      ts, user: currentPersonName || `(不明:${getLoginCode()})`, staffName: staffObj.name, year, period,
+      ts, user: currentPersonName || "(未選択)", staffName: staffObj.name, year, period,
       field: e.field, oldValue: e.oldValue, newValue: e.newValue,
     });
   });
 }
 
 /* ============================== タブ ============================== */
-const TABS = [
+const ADMIN_TABS = [
   {id:"dashboard",  label:"ATS評価-全体"},
   {id:"personal",   label:"ATS評価-個人"},
   {id:"entry",      label:"ATS評価入力"},
@@ -900,6 +805,15 @@ const TABS = [
   {id:"guideline",  label:"評価ガイドライン"},
   {id:"history",    label:"変更履歴"},
 ];
+const GENERAL_TABS = [
+  {id:"myPage",     label:"マイページ"},
+  {id:"mySelfEval", label:"自己評価・目標設定"},
+  {id:"guideline",  label:"評価ガイドライン"},
+];
+function isPrivilegedUser(){
+  const s = currentStaffObj();
+  return !!(s && (s.isAdmin || s.isEvaluator));
+}
 let activeTab = "dashboard";
 let dashboardFilter = "all";      // all | hall | kitchen
 let dashboardPeriod = null;       // 4月 | 7月 | 10月 | 1月 (初回ロード時に「直近で経過した時期」を自動設定)
@@ -907,7 +821,11 @@ let dashboardPeriod = null;       // 4月 | 7月 | 10月 | 1月 (初回ロード
 function renderTabs(){
   const nav = document.getElementById("tabs");
   nav.innerHTML = "";
-  TABS.forEach(t=>{
+  const tabsToUse = isPrivilegedUser() ? ADMIN_TABS : GENERAL_TABS;
+  if(!tabsToUse.some(t=>t.id===activeTab)){
+    activeTab = tabsToUse[0].id;
+  }
+  tabsToUse.forEach(t=>{
     const b = document.createElement("button");
     b.textContent = t.label;
     b.className = t.id===activeTab ? "active" : "";
@@ -993,6 +911,8 @@ function applyDefaultYearAndPeriod(){
   entrySelectedPeriod = period;
   personalChartPeriod = period;
   nineboxPeriod = period;
+  myPagePeriod = period;
+  mySelfPeriod = period;
 }
 
 /* ---------- パソコン/スマホ表示切り替え ---------- */
@@ -1016,6 +936,13 @@ function render(){
   topSlot.appendChild(renderTopRightContent());
   const main = document.getElementById("main");
   main.innerHTML = "";
+  if(!isPrivilegedUser()){
+    if(activeTab==="myPage")          main.appendChild(renderMyPage());
+    else if(activeTab==="mySelfEval") main.appendChild(renderMySelfEval());
+    else if(activeTab==="guideline")  main.appendChild(renderGuideline());
+    else main.appendChild(renderMyPage());
+    return;
+  }
   if(activeTab==="dashboard")  main.appendChild(renderDashboard());
   if(activeTab==="entry")      main.appendChild(renderEntry());
   if(activeTab==="personal")   main.appendChild(renderPersonal());
@@ -1310,7 +1237,6 @@ function buildStaffSearchInput(visibleStaff, selectedId, onSelect){
         item.style.cssText = "padding:9px 14px;font-size:13.5px;cursor:pointer;";
         item.onmouseenter = ()=>{ item.style.background = "var(--cream)"; };
         item.onmouseleave = ()=>{ item.style.background = ""; };
-        // blurより先に発火させたいのでmousedownで拾う(タッチ操作でも同様に発火する)
         item.onmousedown = (e)=>{
           e.preventDefault();
           input.value = labelFor(s);
@@ -1332,6 +1258,8 @@ let entryShowInactive = false;
 let entrySelectedPeriod = null; // 初回ロード時に自動設定
 let personalChartPeriod = null; // ATS評価-個人のレーダーチャート用(初回ロード時に自動設定)
 let nineboxPeriod = null; // 9BOXマップ用(初回ロード時に自動設定)
+let myPagePeriod = null;  // マイページ用(初回ロード時に自動設定)
+let mySelfPeriod = null;  // 自己評価・目標設定用(初回ロード時に自動設定)
 let nineboxFilter = "all"; // all | hall | kitchen
 const CAT_CLASS = {kitchen:"cat-kitchen", hall:"cat-hall", special:"cat-special", shift:"cat-shift", attitude:"cat-attitude"};
 const editSnapshots = {}; // key: `${staffId}:${period}` -> 直近保存時点のperiodDataのコピー(履歴の差分計算用)
@@ -1557,6 +1485,19 @@ function renderEntry(){
   commentBlock.appendChild(commentArea);
   card.appendChild(commentBlock);
 
+  const goalBlock = document.createElement("div");
+  goalBlock.style.marginTop = "18px";
+  const goalHead = document.createElement("label");
+  goalHead.textContent = `本人への目標設定(${entrySelectedPeriod}分・マイページに表示されます)`;
+  goalBlock.appendChild(goalHead);
+  const goalArea = document.createElement("textarea");
+  goalArea.placeholder = "例:レジを一人で回せるようになる";
+  goalArea.value = periodData.evaluatorGoal || "";
+  goalArea.disabled = locked;
+  goalArea.oninput = ()=>{ editingForm = true; periodData.evaluatorGoal = goalArea.value; };
+  goalBlock.appendChild(goalArea);
+  card.appendChild(goalBlock);
+
   if(!locked){
     const saveRow = document.createElement("div");
     saveRow.style.cssText = "margin-top:18px;display:flex;justify-content:flex-end;gap:10px;";
@@ -1629,9 +1570,6 @@ function affiliationMatchesItem(staffAffiliation, categoryId){
   if(categoryId === "kitchen") return staffAffiliation === "キッチン" || staffAffiliation === "両方";
   return true;
 }
-/* 所属に加えて、項目側の「社員専用」等の指定(employTypeOnly)も考慮する。
-   肉カット・シフト作成のように、原則社員の仕事であってアルバイト・パートには
-   そもそも割り当てられない項目を、達成率や★保持者数の計算から正しく除外するため。 */
 function itemAppliesToStaff(item, staffObj){
   if(item.employTypeOnly && !item.employTypeOnly.includes(staffObj.employType)) return false;
   return affiliationMatchesItem(staffObj.affiliation, item.categoryId);
@@ -1651,15 +1589,13 @@ function storeAverageTotal(year, period){
   return Math.round((sum / activeStaff.length) * 10) / 10;
 }
 
-/* ============================== データ分析(勤続 × 達成率の散布図) ============================== */
-/* その人の所属に関係する項目(①②③のオペレーション15項目)だけで達成率%を出す */
+/* ============================== 9BOXマップ用の計算 ============================== */
 function personalAchievementPct(staffObj, scores){
   const relevant = OPERATION_ITEMS.filter(it => itemAppliesToStaff(it, staffObj));
   if(relevant.length===0) return 0;
   const sum = relevant.reduce((acc,it)=> acc + (scores[it.name] ?? 0)/it.max, 0);
-  return Math.round((sum/relevant.length)*1000)/10; // 小数第1位まで
+  return Math.round((sum/relevant.length)*1000)/10;
 }
-/* 勤続(横軸) × 達成率(縦軸)の散布図。バケツ分け・伸び率の判定は行わず、点をそのままプロットする。 */
 function buildScatterSVG(points){
   const width=760, height=440, pad={top:16, right:80, bottom:54, left:60};
   const plotW = width-pad.left-pad.right, plotH = height-pad.top-pad.bottom;
@@ -1874,7 +1810,6 @@ function renderPersonal(){
   chartGrid.className = "chart-grid";
   chartGrid.style.cssText = "display:grid;grid-template-columns:1.3fr 1fr;gap:24px;";
 
-  // 左:合計点数の推移(4期間・店舗平均との比較)
   const lineBox = document.createElement("div");
   const lineTitle = document.createElement("div");
   lineTitle.style.cssText = "font-size:12.5px;font-weight:700;color:var(--muted);margin-bottom:8px;";
@@ -1888,7 +1823,6 @@ function renderPersonal(){
   lineBox.appendChild(lineSvgWrap);
   chartGrid.appendChild(lineBox);
 
-  // 右:オペレーション15項目(①キッチン②ホール③特殊技能)のレーダーチャート
   const radarBox = document.createElement("div");
   const radarPeriodRow = renderPeriodButtons(personalChartPeriod, (p)=>{ personalChartPeriod = p; render(); });
   radarPeriodRow.style.marginBottom = "6px";
@@ -1916,8 +1850,6 @@ function renderPersonal(){
 }
 /* ============================== 9BOXマップ ============================== */
 /* その項目に関係する所属の在籍・被評価者のうち、★基準を満たしている人を返す(単一障害点検出用) */
-/* その項目に関係する所属・雇用区分の在籍・被評価者のうち、★基準を満たしている人を返す(単一障害点検出用)。
-   対象母数(relevantCount)も一緒に返す:保持者数だけでなく「対象が何人中何人か」を見るため。 */
 function itemStarHolders(item, year, period){
   const relevantStaff = state.staff.filter(s=>
     s.isEvaluatee && s.status==="active" && itemAppliesToStaff(item, s)
@@ -1932,14 +1864,11 @@ function itemStarHolders(item, year, period){
   });
   return { holders, relevantCount: relevantStaff.length };
 }
-/* ページ上部の全て/ホール/キッチンの絞り込みを、項目の表示可否として流用する */
 function itemVisibleForFilter(item, filter){
   if(filter==="hall") return item.categoryId !== "kitchen";
   if(filter==="kitchen") return item.categoryId !== "hall";
   return true;
 }
-/* 分析モジュールの登録リスト。今後、新しい分析を増やす時はここに1つ追加するだけでよい。
-   各モジュールは render() が中身のDOMノードを1つ返す、という形で自己完結させている。 */
 const ANALYSIS_MODULES = [
   {
     id: "tenureScatter",
@@ -2031,13 +1960,11 @@ const ANALYSIS_MODULES = [
     }
   },
 ];
-const analysisOpenState = {}; // {[moduleId]: boolean} 未設定(undefined)は「開いている」扱い
+const analysisOpenState = {};
 
 /* シフト×スキル充足チェック。データ分析タブではなくシフトデータタブに表示する。
    開店準備(9-10時)・閉店後片付け(22時)は営業時間外の作業なのでチェック対象から除外する。 */
 const SKILL_CHECK_EXCLUDED_HOURS = [9, 10, 22];
-// 不足ポジション検知専用の年度・時期(データ分析タブのnineboxPeriodとは独立させ、
-// タブをまたいで判定基準がこっそり変わらないようにする)。初回はnullでrenderShiftSkillCheck内で初期化。
 let shiftSkillYear = null;
 let shiftSkillPeriod = null;
 function renderShiftSkillCheck(date){
@@ -2111,7 +2038,7 @@ function renderShiftSkillCheck(date){
 
   const findings = [];
   for(let h=minHour; h<maxHour; h++){
-    if(SKILL_CHECK_EXCLUDED_HOURS.includes(h % 24)) continue; // 開店準備・閉店後片付けは対象外
+    if(SKILL_CHECK_EXCLUDED_HOURS.includes(h % 24)) continue;
     const hStart = h*60, hEnd = h*60+60;
     CATS.forEach(cat=>{
       const present = staffSegments.filter(s=> s.segments.some(seg=> seg.label===cat.label && seg.startMin < hEnd && seg.endMin > hStart));
@@ -2150,7 +2077,6 @@ function renderShiftSkillCheck(date){
 
   return container;
 }
-
 
 function renderNinebox(){
   const wrap = document.createElement("div");
@@ -2213,51 +2139,34 @@ function todayISO(){ return new Date().toISOString().slice(0,10); }
 let shiftSelectedDate = todayISO();
 let shiftUploadStatus = null;
 let shiftDataCache = {}; // {date: パース済みデータ|null(未取込確認済み)}
-let shiftDateListCache = null; // 取り込み済みの日付一覧(配列)。未取得ならnull
+let shiftDateListCache = null;
 let shiftDateListFetching = false;
-/* シフトの「日付一覧」だけを軽く取得するための専用インデックス(stores/.../shiftDates)。
-   これが無いと、日付一覧を出すためだけに全日程・全スタッフの詳細データを毎回まるごと
-   取得することになり、日数が増えるほど重くなってしまう。
-   既存データ(このインデックスができる前に保存された日)は、初回だけ自動でインデックスに登録する。 */
-let shiftDatesIndexMigrated = false;
-async function migrateLegacyShiftDatesIfNeeded(){
-  if(shiftDatesIndexMigrated) return;
-  shiftDatesIndexMigrated = true;
-  try{
-    const indexSnap = await get(ref(db, `stores/${STORE_ID}/shiftDates`));
-    if(indexSnap.exists()) return;
-    const fullSnap = await get(ref(db, `stores/${STORE_ID}/shifts`));
-    if(!fullSnap.exists()) return;
-    const updates = {};
-    Object.keys(fullSnap.val()).forEach(d=>{ updates[d] = true; });
-    await set(ref(db, `stores/${STORE_ID}/shiftDates`), updates);
-  }catch(e){ console.error("シフト日付インデックスの移行に失敗:", e); }
-}
 function ensureShiftDateListLoaded(){
-  if(shiftDateListCache !== null || shiftDateListFetching) return;
+  if(shiftDateListCache !== null || shiftDateListFetching || !STORAGE_AVAILABLE) return;
   shiftDateListFetching = true;
-  migrateLegacyShiftDatesIfNeeded()
-    .then(()=> get(ref(db, `stores/${STORE_ID}/shiftDates`)))
-    .then(snap=>{
-      shiftDateListCache = snap.exists() ? Object.keys(snap.val()).sort() : [];
-      shiftDateListFetching = false;
-      render();
-    }).catch(()=>{ shiftDateListCache = []; shiftDateListFetching = false; });
+  window.storage.list("gaisenmon-ats-preview-shift-", true).then(res=>{
+    const keys = (res && res.keys) ? res.keys : [];
+    shiftDateListCache = keys.map(k=> k.replace("gaisenmon-ats-preview-shift-","")).sort();
+    shiftDateListFetching = false;
+    render();
+  }).catch(()=>{ shiftDateListCache = []; shiftDateListFetching = false; });
 }
 let shiftFetchInFlight = {};
-/* シフトデータを(未取得なら)Firebaseから取り込んでキャッシュする共通処理。
-   シフトデータタブ・データ分析タブの両方から使う。 */
+
 function ensureShiftDataLoaded(date){
-  if(!(date in shiftDataCache) && !shiftFetchInFlight[date]){
+  if(!(date in shiftDataCache) && !shiftFetchInFlight[date] && STORAGE_AVAILABLE){
     shiftFetchInFlight[date] = true;
-    get(ref(db, `stores/${STORE_ID}/shifts/${date}`)).then(snap=>{
-      shiftDataCache[date] = snap.exists() ? snap.val() : null;
+    window.storage.get(shiftStorageKey(date), true).then(res=>{
+      shiftDataCache[date] = (res && res.value) ? JSON.parse(res.value) : null;
       delete shiftFetchInFlight[date];
       render();
-    }).catch(()=>{ delete shiftFetchInFlight[date]; });
+    }).catch(()=>{
+      shiftDataCache[date] = null;
+      delete shiftFetchInFlight[date];
+      render();
+    });
   }
 }
-/* "HH:MM" または "HH:MM(翌)" を、その日の0:00からの分数に変換する(翌日分は+1440) */
 function timeStrToMinutes(t){
   const m = /^(\d{2}):(\d{2})(\(翌\))?$/.exec(t||"");
   if(!m) return null;
@@ -2269,6 +2178,7 @@ function hourLabel(h){
   const displayHour = h % 24;
   return `${displayHour}時台` + (h>=24 ? "(翌)" : "");
 }
+function shiftStorageKey(date){ return `gaisenmon-ats-preview-shift-${date}`; }
 
 function parseShiftWorkbook(workbook){
   const XL = window.XLSX;
@@ -2291,7 +2201,7 @@ function parseShiftWorkbook(workbook){
     const cell = ws[XL.utils.encode_cell({r:0, c})];
     if(cell && cell.v === "時間"){ timeHeaderCol = c; break; }
   }
-  const blockStartCol = 3; // D列(0-indexed)。5:00スタート、15分刻み
+  const blockStartCol = 3;
   const blockEndCol = (timeHeaderCol!==null ? timeHeaderCol-1 : blockStartCol+95);
 
   function colToTime(c){
@@ -2307,7 +2217,7 @@ function parseShiftWorkbook(workbook){
   for(let r=1; r<=range.e.r; r++){
     const nameCell = ws[XL.utils.encode_cell({r, c:0})];
     const typeCell = ws[XL.utils.encode_cell({r, c:1})];
-    if(!nameCell || typeof nameCell.v !== "string" || !nameCell.v.trim()) break; // 空行(区切り)で終了
+    if(!nameCell || typeof nameCell.v !== "string" || !nameCell.v.trim()) break;
     if(!typeCell || typeof typeCell.v !== "string" || !typeCell.v.trim()) break;
     const name = nameCell.v.replace(/\s+/g," ").trim();
     const employType = typeCell.v.trim();
@@ -2319,7 +2229,7 @@ function parseShiftWorkbook(workbook){
       const color = (cell && cell.s && cell.s.fgColor && cell.s.fgColor.rgb) ? cell.s.fgColor.rgb.toUpperCase() : null;
       const label = color ? (legend[color] || null) : null;
       const segStart = colToTime(c);
-      const segEnd = colToTime(c+1); // このマスの「終わり」は次のマスの「開始」(15分刻み1マス=15分間)
+      const segEnd = colToTime(c+1);
       if(!cur || cur.label !== label){
         if(cur && cur.label) segments.push(cur);
         cur = { label, start: segStart, end: segEnd };
@@ -2342,8 +2252,6 @@ function parseShiftWorkbook(workbook){
   return { legend, staff: staffList };
 }
 
-/* 元のExcelに近い見た目のタイムライン表(行=スタッフ、列=時間、色は元シートの凡例と同じ配色)。
-   ExcelのUIそのものではなく、パース済みの区間データから再構築した表。 */
 function buildShiftGridSVG(shiftData){
   const labelToColor = {};
   Object.entries(shiftData.legend || {}).forEach(([hex, label])=>{ labelToColor[label] = "#"+hex; });
@@ -2427,7 +2335,7 @@ function renderShifts(){
   fileInput.onchange = ()=>{
     const file = fileInput.files[0];
     if(!file) return;
-    const m = file.name.match(/(\d{4})(\d{2})(\d{2})/); // ファイル名の8桁の数字(YYYYMMDD)から日付を自動判定
+    const m = file.name.match(/(\d{4})(\d{2})(\d{2})/);
     if(m){
       const iso = `${m[1]}-${m[2]}-${m[3]}`;
       shiftSelectedDate = iso;
@@ -2463,8 +2371,9 @@ function renderShifts(){
           return;
         }
         const payload = { ...parsed, uploadedAt: new Date().toISOString() };
-        await set(ref(db, `stores/${STORE_ID}/shifts/${targetDate}`), payload);
-        await set(ref(db, `stores/${STORE_ID}/shiftDates/${targetDate}`), true);
+        if(STORAGE_AVAILABLE){
+          try{ await window.storage.set(shiftStorageKey(targetDate), JSON.stringify(payload), true); }catch(e){}
+        }
         shiftDataCache[targetDate] = payload;
         if(shiftDateListCache !== null && !shiftDateListCache.includes(targetDate)){
           shiftDateListCache.push(targetDate);
@@ -2526,10 +2435,9 @@ function renderShifts(){
         delBtn.onclick = (e)=>{
           e.stopPropagation();
           showModal(`${d}のシフトデータを削除します。元に戻せません。よろしいですか?`, async ()=>{
-            try{
-              await set(ref(db, `stores/${STORE_ID}/shifts/${d}`), null);
-              await set(ref(db, `stores/${STORE_ID}/shiftDates/${d}`), null);
-            }catch(err){ console.error(err); }
+            if(STORAGE_AVAILABLE){
+              try{ await window.storage.delete(shiftStorageKey(d), true); }catch(err){ console.error(err); }
+            }
             delete shiftDataCache[d];
             if(shiftDateListCache) shiftDateListCache = shiftDateListCache.filter(x=>x!==d);
             if(shiftSelectedDate === d) shiftUploadStatus = null;
@@ -2548,7 +2456,6 @@ function renderShifts(){
   }
   wrap.appendChild(listCard);
 
-  // 選択中の日付のデータをFirebaseから(初回のみ)取得してキャッシュする
   ensureShiftDataLoaded(shiftSelectedDate);
 
   const statusCard = document.createElement("div");
@@ -2644,8 +2551,8 @@ function renderStaffAdmin(){
   addCard.appendChild(addBtn);
   wrap.appendChild(addCard);
 
-// 一覧・在籍/休職/退職の切り替え・編集
-const STATUS_META = {
+  // 一覧・在籍/休職/退職の切り替え
+  const STATUS_META = {
     active:   {label:"在籍", style:"background:var(--green-bg);color:var(--green);"},
     leave:    {label:"休職", style:"background:var(--amber-bg);color:var(--amber);"},
     resigned: {label:"退職", style:"background:#FBE4E1;color:#B23A2E;"},
@@ -2705,21 +2612,18 @@ const STATUS_META = {
   const tableWrap = document.createElement("div");
   tableWrap.className = "table-wrap";
   const table = document.createElement("table");
-  table.innerHTML = `<thead><tr><th>社員CD</th><th class="name-col">氏名</th><th>雇用区分</th><th>所属</th><th>入社日</th><th>状態</th><th>ログイン</th><th style="text-align:right;">操作</th></tr></thead>`;
+  table.innerHTML = `<thead><tr><th>社員CD</th><th class="name-col">氏名</th><th>雇用区分</th><th>所属</th><th>入社日</th><th>状態</th><th style="text-align:right;">操作</th></tr></thead>`;
   const tbody = document.createElement("tbody");
   [...state.staff].sort((a,b)=> Number(a.code)-Number(b.code)).forEach(st=>{
     const tr = document.createElement("tr");
     const meta = STATUS_META[st.status] || STATUS_META.active;
     tr.innerHTML = `
       <td>${st.code}</td>
-      <td class="name-col" style="${st.hasLogin ? "" : "color:var(--muted);"}">${st.name}</td>
+      <td class="name-col">${st.name}</td>
       <td>${st.employType}</td>
       <td>${st.affiliation}</td>
       <td style="color:var(--muted);font-size:11px;">${st.hireDate ?? "-"}</td>
       <td><span class="aff-chip" style="${meta.style}">${meta.label}</span></td>
-      <td>${st.hasLogin
-        ? `<span class="aff-chip" style="background:var(--green-bg);color:var(--green);">設定済み</span>`
-        : `<span class="aff-chip" style="background:var(--gray-bg);color:var(--gray-ink);">未設定</span>`}</td>
     `;
     const actionTd = document.createElement("td");
     actionTd.style.cssText = "text-align:right;position:relative;white-space:nowrap;";
@@ -2733,8 +2637,6 @@ const STATUS_META = {
     editStaffBtn.onclick = ()=>{ editingStaffId = st.id; render(); };
     actionGroup.appendChild(editStaffBtn);
 
-    // 編集以外の操作(休職/退職・ログイン設定・設定済みにする)は、内容が同じでも
-    // デスクトップは並べて表示・スマホでは「⋮」1つにまとめて表示を変える。
     const extraActions = [];
     [{key:"leave", label:"休職"}, {key:"resigned", label:"退職"}].forEach(opt=>{
       const isOn = st.status === opt.key;
@@ -2756,45 +2658,6 @@ const STATUS_META = {
         },
       });
     });
-    extraActions.push({
-      label: st.hasLogin ? "ログイン再設定" : "ログイン設定",
-      run: ()=>{
-        showInputModal(
-          `${st.name}さん(社員CD: ${st.code})のログインパスワードを設定します。\n6文字以上で入力してください。${st.hasLogin ? "\n※既に設定済みのようです。パスワードの再設定(リセット)は現在の仕組みではできません。" : ""}`,
-          async (password, close)=>{
-            if(!password || password.length < 6){ throw new Error("パスワードは6文字以上にしてください(Firebaseの制限です)。"); }
-            try{
-              await createLoginAccount(st.code, password);
-            }catch(e){
-              throw new Error(e.code==="auth/email-already-in-use" ? "このスタッフのログインは既に設定済みです。" : ("作成に失敗しました:" + (e.message||"")));
-            }
-            st.hasLogin = true;
-            await saveState();
-            close();
-            showToast(`${st.name}さんのログインを設定しました`);
-            render();
-          },
-          {inputType:"password", placeholder:"新しいパスワード", confirmLabel:"設定する"}
-        );
-      },
-    });
-    if(!st.hasLogin){
-      extraActions.push({
-        label: "設定済みにする",
-        title: "以前から実際にはログインアカウントがある場合、この記録だけを直します",
-        run: ()=>{
-          showModal(
-            `${st.name}さんは、以前から実際にはログインアカウントを作成済みですか?\nこの操作はアプリ側の表示だけを直すもので、新しくアカウントを作るわけではありません。`,
-            ()=>{
-              st.hasLogin = true;
-              saveState();
-              render();
-            },
-            {confirmLabel:"設定済みにする"}
-          );
-        },
-      });
-    }
 
     if(displayMode === "mobile"){
       const moreBtn = document.createElement("button");
@@ -2809,7 +2672,6 @@ const STATUS_META = {
         extraActions.forEach(a=>{
           const item = document.createElement("button");
           item.textContent = a.label;
-          if(a.title) item.title = a.title;
           item.style.cssText = "display:block;width:100%;text-align:left;background:#fff;border:none;border-bottom:1px solid var(--line);color:" + (a.active ? "var(--ember-dark)" : "var(--ink)") + ";padding:10px 14px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;";
           item.onclick = ()=>{ openStaffActionMenuId = null; a.run(); };
           menu.appendChild(item);
@@ -2821,7 +2683,6 @@ const STATUS_META = {
       extraActions.forEach(a=>{
         const btn = document.createElement("button");
         btn.textContent = a.label;
-        if(a.title) btn.title = a.title;
         btn.className = a.active ? "active" : "";
         btn.style.cssText = a.active ? "" : pillStyle;
         btn.onclick = a.run;
@@ -3003,6 +2864,250 @@ const STATUS_META = {
   adminCard.appendChild(adminAddRow);
   wrap.appendChild(adminCard);
 
+  return wrap;
+}
+
+/* ============================== マイページ(一般スタッフ専用) ============================== */
+function renderMyPage(){
+  const wrap = document.createElement("div");
+  const me = currentStaffObj();
+  if(!me){
+    wrap.innerHTML = `<div class="card"><div class="empty">ログイン中のスタッフ情報が見つかりませんでした。</div></div>`;
+    return wrap;
+  }
+  if(!me.yearData[selectedYear]) me.yearData[selectedYear] = emptyPeriods();
+  const pd = me.yearData[selectedYear][myPagePeriod];
+
+  const titleRow = document.createElement("div");
+  titleRow.className = "title-row";
+  const h = document.createElement("h2");
+  h.className = "title";
+  h.textContent = `${me.name}さんのマイページ(${selectedYear}年度)`;
+  titleRow.appendChild(h);
+  wrap.appendChild(titleRow);
+  wrap.appendChild(renderPeriodButtons(myPagePeriod, (p)=>{ myPagePeriod = p; render(); }));
+
+  // 自己評価を出し、かつ評価者が確定するまでは中身を見せない(順序を守ってバイアスを避けつつ、
+  // 未確定の書きかけスコアが見えて後で食い違う事態も避ける)
+  const unlocked = pd.selfSubmitted && pd.confirmed;
+  if(!unlocked){
+    const lockedCard = document.createElement("div");
+    lockedCard.className = "card";
+    lockedCard.style.cssText = "text-align:center;padding:40px 20px;";
+    const reason = !pd.selfSubmitted
+      ? "自己評価・目標設定を提出すると、評価者の確定後に見られるようになります。"
+      : "評価者による確定を待っています。確定されると自動的に見られるようになります。";
+    lockedCard.innerHTML = `
+      <div style="font-size:16px;font-weight:800;color:var(--ember-dark);margin-bottom:10px;">${myPagePeriod}分はまだ見られません</div>
+      <div style="font-size:13.5px;color:var(--muted);margin-bottom:20px;">${reason}</div>
+    `;
+    if(!pd.selfSubmitted){
+      const gotoBtn = document.createElement("button");
+      gotoBtn.className = "primary";
+      gotoBtn.textContent = "自己評価・目標設定を入力する";
+      gotoBtn.onclick = ()=>{ mySelfPeriod = myPagePeriod; activeTab = "mySelfEval"; render(); };
+      lockedCard.appendChild(gotoBtn);
+    }
+    wrap.appendChild(lockedCard);
+    return wrap;
+  }
+
+  const goalCard = document.createElement("div");
+  goalCard.className = "card";
+  goalCard.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+      <div>
+        <div style="font-size:12px;color:var(--muted);font-weight:700;margin-bottom:4px;">自分の目標宣言</div>
+        <div style="font-size:14px;font-weight:700;white-space:pre-wrap;">${pd.selfGoal ? pd.selfGoal.replace(/</g,"&lt;") : "(未設定)"}</div>
+      </div>
+      <div>
+        <div style="font-size:12px;color:var(--muted);font-weight:700;margin-bottom:4px;">評価者からの目標</div>
+        <div style="font-size:14px;font-weight:700;white-space:pre-wrap;">${pd.evaluatorGoal ? pd.evaluatorGoal.replace(/</g,"&lt;") : "(まだ設定されていません)"}</div>
+      </div>
+    </div>
+  `;
+  wrap.appendChild(goalCard);
+
+  const evalStars = starCount(pd.scores);
+  const selfStars = starCount(pd.selfScores || emptyScores());
+  const gap = evalStars - selfStars;
+  const gapColor = gap===0 ? "var(--ink)" : (gap>0 ? "var(--green)" : "var(--ember-dark)");
+  const totalCard = document.createElement("div");
+  totalCard.className = "card";
+  totalCard.innerHTML = `
+    <div style="display:flex;gap:28px;flex-wrap:wrap;">
+      <div><div style="font-size:12px;color:var(--muted);font-weight:700;">評価者がつけた★</div><div style="font-size:24px;font-weight:800;">${evalStars}</div></div>
+      <div><div style="font-size:12px;color:var(--muted);font-weight:700;">自己評価の★</div><div style="font-size:24px;font-weight:800;">${selfStars}</div></div>
+      <div><div style="font-size:12px;color:var(--muted);font-weight:700;">ギャップ</div><div style="font-size:24px;font-weight:800;color:${gapColor};">${gap>=0?"+":""}${gap}</div></div>
+    </div>
+  `;
+  wrap.appendChild(totalCard);
+
+  const tableCard = document.createElement("div");
+  tableCard.className = "card";
+  tableCard.innerHTML = `<div style="font-weight:800;font-size:15px;margin-bottom:12px;">${myPagePeriod}の評価スコア(評価者 / 自己評価)</div>`;
+  const tableWrap = document.createElement("div");
+  tableWrap.className = "table-wrap";
+  const table = document.createElement("table");
+  table.className = "pcard-table";
+  table.innerHTML = `<thead><tr><th colspan="2" class="item-col-head">評価項目</th><th>評価者</th><th>自己評価</th></tr></thead>`;
+  const tbody = document.createElement("tbody");
+  CATEGORIES.forEach(cat=>{
+    cat.items.forEach((it, idx)=>{
+      const tr = document.createElement("tr");
+      if(idx===0){
+        const catTd = document.createElement("td");
+        catTd.className = "cat-col " + CAT_CLASS[cat.id];
+        catTd.rowSpan = cat.items.length;
+        catTd.textContent = cat.label;
+        tr.appendChild(catTd);
+      }
+      const nameTd = document.createElement("td");
+      nameTd.className = "item-col";
+      nameTd.textContent = it.name;
+      tr.appendChild(nameTd);
+      const v = pd.scores[it.name] ?? 0;
+      const sv = pd.selfScores?.[it.name] ?? 0;
+      const scoreTd = document.createElement("td");
+      scoreTd.innerHTML = `<span class="pcard-score ${scoreClass(v, it.max)}">${v}/${it.max}</span>`;
+      const selfTd = document.createElement("td");
+      selfTd.innerHTML = `<span class="pcard-score ${scoreClass(sv, it.max)}">${sv}/${it.max}</span>`;
+      tr.appendChild(scoreTd);
+      tr.appendChild(selfTd);
+      tbody.appendChild(tr);
+    });
+  });
+  table.appendChild(tbody);
+  tableWrap.appendChild(table);
+  tableCard.appendChild(tableWrap);
+  wrap.appendChild(tableCard);
+
+  const commentCard = document.createElement("div");
+  commentCard.className = "card";
+  commentCard.innerHTML = `
+    <div style="font-weight:800;font-size:14px;margin-bottom:6px;">評価者からのコメント</div>
+    <div style="font-size:13.5px;white-space:pre-wrap;">${pd.comment ? pd.comment.replace(/</g,"&lt;") : '<span style="color:var(--muted);">(まだコメントはありません)</span>'}</div>
+  `;
+  wrap.appendChild(commentCard);
+
+  return wrap;
+}
+
+/* ============================== 自己評価・目標設定(一般スタッフ専用) ============================== */
+function renderMySelfEval(){
+  const wrap = document.createElement("div");
+  const me = currentStaffObj();
+  if(!me){
+    wrap.innerHTML = `<div class="card"><div class="empty">ログイン中のスタッフ情報が見つかりませんでした。</div></div>`;
+    return wrap;
+  }
+  if(!me.yearData[selectedYear]) me.yearData[selectedYear] = emptyPeriods();
+  const pd = me.yearData[selectedYear][mySelfPeriod];
+  if(!pd.selfScores) pd.selfScores = emptyScores();
+
+  const titleRow = document.createElement("div");
+  titleRow.className = "title-row";
+  const h = document.createElement("h2");
+  h.className = "title";
+  h.textContent = `自己評価・目標設定(${selectedYear}年度)`;
+  titleRow.appendChild(h);
+  wrap.appendChild(titleRow);
+  wrap.appendChild(renderPeriodButtons(mySelfPeriod, (p)=>{ mySelfPeriod = p; render(); }));
+
+  if(pd.selfSubmitted){
+    const doneBanner = document.createElement("div");
+    doneBanner.style.cssText = "background:var(--green-bg);color:var(--green);border-radius:8px;padding:10px 14px;font-size:13px;font-weight:700;margin-bottom:16px;";
+    doneBanner.textContent = `${mySelfPeriod}分の自己評価・目標は提出済みです。再提出すると内容が上書きされます。`;
+    wrap.appendChild(doneBanner);
+  }
+
+  const card = document.createElement("div");
+  card.className = "card";
+
+  const goalBox = document.createElement("div");
+  goalBox.style.marginBottom = "20px";
+  const goalLbl = document.createElement("label");
+  goalLbl.textContent = "今期の目標宣言";
+  goalBox.appendChild(goalLbl);
+  const goalInput = document.createElement("textarea");
+  goalInput.placeholder = "例:レジとドリンカーを一人で回せるようになる";
+  goalInput.value = pd.selfGoal || "";
+  goalInput.oninput = ()=>{ pd.selfGoal = goalInput.value; };
+  goalBox.appendChild(goalInput);
+  card.appendChild(goalBox);
+
+  if(pd.evaluatorGoal){
+    const evalGoalBox = document.createElement("div");
+    evalGoalBox.style.cssText = "background:var(--cream);border-radius:8px;padding:12px 14px;margin-bottom:20px;font-size:13px;";
+    evalGoalBox.innerHTML = `<div style="font-weight:800;margin-bottom:4px;">評価者から設定されている目標</div><div style="white-space:pre-wrap;">${pd.evaluatorGoal.replace(/</g,"&lt;")}</div>`;
+    card.appendChild(evalGoalBox);
+  }
+
+  const subTitle = document.createElement("div");
+  subTitle.style.cssText = "font-weight:800;font-size:15px;margin-bottom:12px;";
+  subTitle.textContent = `${mySelfPeriod}の自己チェック(自分が今どのレベルだと思うか)`;
+  card.appendChild(subTitle);
+
+  const tableWrap = document.createElement("div");
+  tableWrap.className = "paper-table-wrap";
+  const table = document.createElement("table");
+  table.className = "paper-table";
+  const tbody = document.createElement("tbody");
+  CATEGORIES.forEach(cat=>{
+    cat.items.forEach((it, idx)=>{
+      const tr = document.createElement("tr");
+      if(idx===0){
+        const catTd = document.createElement("td");
+        catTd.className = "cat-col " + CAT_CLASS[cat.id];
+        catTd.rowSpan = cat.items.length;
+        catTd.textContent = cat.label;
+        tr.appendChild(catTd);
+      }
+      const nameTd = document.createElement("td");
+      nameTd.className = "item-col";
+      nameTd.textContent = it.name;
+      tr.appendChild(nameTd);
+      const optsTd = document.createElement("td");
+      optsTd.className = "opts-col";
+      const chipGroup = document.createElement("div");
+      chipGroup.className = "chip-group";
+      const current = pd.selfScores[it.name] ?? 0;
+      for(let v=0; v<=it.max; v++){
+        const chip = document.createElement("button");
+        chip.className = "chip-btn" + (v===current ? " selected" : "");
+        chip.textContent = v;
+        chip.onclick = ()=>{ pd.selfScores[it.name] = v; render(); };
+        chipGroup.appendChild(chip);
+      }
+      optsTd.appendChild(chipGroup);
+      tr.appendChild(optsTd);
+      tbody.appendChild(tr);
+    });
+  });
+  table.appendChild(tbody);
+  tableWrap.appendChild(table);
+  card.appendChild(tableWrap);
+
+  const saveRow = document.createElement("div");
+  saveRow.style.cssText = "margin-top:18px;display:flex;justify-content:flex-end;gap:12px;align-items:center;flex-wrap:wrap;";
+  const note = document.createElement("span");
+  note.style.cssText = "font-size:12px;color:var(--muted);";
+  note.textContent = "提出すると、評価者の確定後にマイページで比較が見られるようになります。";
+  saveRow.appendChild(note);
+  const saveBtn = document.createElement("button");
+  saveBtn.className = "primary";
+  saveBtn.textContent = `${mySelfPeriod}分を提出する`;
+  saveBtn.onclick = async ()=>{
+    pd.selfSubmitted = true;
+    await saveState();
+    myPagePeriod = mySelfPeriod;
+    activeTab = "myPage";
+    render();
+  };
+  saveRow.appendChild(saveBtn);
+  card.appendChild(saveRow);
+
+  wrap.appendChild(card);
   return wrap;
 }
 
@@ -3194,141 +3299,20 @@ function renderHistory(){
   return wrap;
 }
 
-/* ============================== 起動(ログイン後にリアルタイム購読を開始) ============================== */
-let appStarted = false;
-/* 変更履歴を本体から独立させる前の旧データには、state側に history が同居している可能性がある。
-   新しい保存先(historyRef)がまだ空で、旧データ側に履歴が残っている場合だけ、一度だけ移す。 */
-async function migrateLegacyHistoryIfNeeded(){
-  try{
-    const [stateSnap, histSnap] = await Promise.all([get(stateRef), get(historyRef)]);
-    const legacyHistory = stateSnap.val()?.history;
-    const currentHistory = histSnap.val();
-    if(Array.isArray(legacyHistory) && legacyHistory.length>0 && (!Array.isArray(currentHistory) || currentHistory.length===0)){
-      await set(historyRef, legacyHistory);
-    }
-  }catch(e){
-    console.error("履歴の移行チェックに失敗", e);
-  }
-}
-
-function startApp(){
-  if(appStarted) return;
-  appStarted = true;
+/* ============================== 起動 ============================== */
+(async function init(){
   document.getElementById("main").innerHTML = `<div style="padding:30px;color:var(--muted);">読み込み中...</div>`;
-
-  // フォーム内の入力欄にフォーカスがある間は「編集中」とみなし、
-  // 他の人の保存によるリアルタイム再描画で入力中の内容を消さないようにする。
-  // 解除は行わず(true にするだけ)、実際に解除するのは保存・確定・タブ切り替えなど
-  // 各操作ハンドラ側の editingForm=false に任せる。
-  // 理由: 点数ボタン(button要素)を押すと画面全体を再描画するため、フォーカスが外れて
-  // focusout が発火してしまい、ここで自動的にfalseへ戻すと「編集中」判定が
-  // ボタンを押すたびに解除されてしまう(=同時編集ガードが機能しなくなる)バグがあった。
-  const mainEl = document.getElementById("main");
-  mainEl.addEventListener("focusin", (e)=>{
-    if(["INPUT","SELECT","TEXTAREA"].includes(e.target.tagName)) editingForm = true;
-  });
-
-  // Firebaseの接続状態そのものを監視
-  onValue(ref(db, ".info/connected"), (snap)=>{
-    setSyncStatus(snap.val() === true);
-  });
-
-  state = { staff: [], years: [INITIAL_YEAR], history: [], updatedAt: null };
-  function tryFirstRender(){
-    if(stateLoaded && historyLoaded && !firstLoadDone){
-      firstLoadDone = true;
-      currentPersonName = resolveCurrentPersonName();
-      render();
-    }
+  state = await loadState();
+  lastSavedCoreJSON = JSON.stringify({staff:state.staff, years:state.years, updatedAt:state.updatedAt});
+  lastSavedHistoryJSON = JSON.stringify(state.history);
+  lastServerCore = JSON.parse(JSON.stringify({staff:state.staff, years:state.years}));
+  lastServerHistory = JSON.parse(JSON.stringify(state.history));
+  setSyncStatus(true);
+  render();
+  if(STORAGE_AVAILABLE){
+    setInterval(pollForUpdates, 6000);
   }
-
-  // データ本体(staff/years)をリアルタイム購読。誰かが保存すると全員の画面に自動反映される
-  onValue(stateRef, async (snapshot)=>{
-    const val = snapshot.val();
-    if(val === null){
-      if(!stateLoaded){
-        const seed = defaultCoreState();
-        state.staff = seed.staff;
-        state.years = seed.years;
-        lastServerCore = JSON.parse(JSON.stringify({staff:state.staff, years:state.years}));
-        stateLoaded = true;
-        tryFirstRender();
-        saveState();
-      }
-      return;
-    }
-    if(editingForm && firstLoadDone){
-      return; // 編集中は他人の更新の取り込みを見送る(自分の未保存の変更を守る)
-    }
-    const migrated = migrateCoreState(val);
-    state.staff = migrated.staff;
-    state.years = migrated.years;
-    state.updatedAt = migrated.updatedAt;
-    lastServerCore = JSON.parse(JSON.stringify({staff: state.staff, years: state.years})); // 保存時の差分判定の基準点を更新
-    stateLoaded = true;
-    currentPersonName = resolveCurrentPersonName();
-    if(firstLoadDone) render(); else tryFirstRender();
-  });
-
-  // 変更履歴を別パスでリアルタイム購読(本体とは独立して増減する)
-  migrateLegacyHistoryIfNeeded().then(()=>{
-    onValue(historyRef, (snapshot)=>{
-      const val = snapshot.val();
-      if(val === null){
-        if(!historyLoaded){
-          state.history = [];
-          lastServerHistory = [];
-          historyLoaded = true;
-          tryFirstRender();
-        }
-        return;
-      }
-      if(editingForm && firstLoadDone){
-        return;
-      }
-      state.history = Array.isArray(val) ? val : [];
-      lastServerHistory = JSON.parse(JSON.stringify(state.history));
-      historyLoaded = true;
-      if(firstLoadDone) render(); else tryFirstRender();
-    });
-  });
-}
-
-/* ---- ログイン画面の制御 ---- */
-document.getElementById("login-btn").onclick = async ()=>{
-  const code = document.getElementById("login-code").value.trim();
-  const password = document.getElementById("login-password").value;
-  const errEl = document.getElementById("login-error");
-  errEl.textContent = "";
-  if(!code || !password){
-    errEl.textContent = "社員CDとパスワードを入力してください。";
-    return;
-  }
-  try{
-    await signInWithEmailAndPassword(auth, codeToEmail(code), password);
-  }catch(e){
-    errEl.textContent = "ログインできませんでした。社員CDかパスワードをご確認ください。";
-  }
-};
-document.getElementById("login-code").addEventListener("keydown", (e)=>{
-  if(e.key === "Enter") document.getElementById("login-password").focus();
-});
-document.getElementById("login-password").addEventListener("keydown", (e)=>{
-  if(e.key === "Enter") document.getElementById("login-btn").click();
-});
-
-onAuthStateChanged(auth, (user)=>{
-  const loginScreen = document.getElementById("login-screen");
-  const app = document.getElementById("app");
-  if(user){
-    loginScreen.style.display = "none";
-    app.style.display = "";
-    startApp();
-  } else {
-    loginScreen.style.display = "flex";
-    app.style.display = "none";
-  }
-});
+})();
 </script>
 </body>
 </html>
