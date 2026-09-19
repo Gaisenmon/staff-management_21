@@ -3349,27 +3349,30 @@ function renderGuideline(){
 
   const listStyle = "margin:0;padding-left:18px;font-size:13.5px;line-height:1.9;color:var(--ink);";
 
-  wrap.appendChild(glCard("評価の目的", `
-    <ul style="${listStyle}">
-      <li>公平で納得感のある評価を通じて、スタッフの育成とモチベーション向上を図る</li>
-      <li>スキル到達度・協力姿勢・統率力など、実務+行動を可視化する</li>
-      <li>昇格・指導対象・配置判断の基準資料として活用する</li>
-    </ul>
-  `));
+  // 評価の目的・評価月時給反映・評価フローは運用側の情報なので、一般スタッフには見せない
+  if(isPrivilegedUser()){
+    wrap.appendChild(glCard("評価の目的", `
+      <ul style="${listStyle}">
+        <li>公平で納得感のある評価を通じて、スタッフの育成とモチベーション向上を図る</li>
+        <li>スキル到達度・協力姿勢・統率力など、実務+行動を可視化する</li>
+        <li>昇格・指導対象・配置判断の基準資料として活用する</li>
+      </ul>
+    `));
 
-  wrap.appendChild(glCard("評価月・時給反映", `
-    <div style="font-size:13.5px;line-height:1.9;">
-      評価は <strong>7月・10月・1月・4月</strong>(年4回)。時給への反映は <strong>5月・11月</strong> に実施。
-    </div>
-  `));
+    wrap.appendChild(glCard("評価月・時給反映", `
+      <div style="font-size:13.5px;line-height:1.9;">
+        評価は <strong>7月・10月・1月・4月</strong>(年4回)。時給への反映は <strong>5月・11月</strong> に実施。
+      </div>
+    `));
 
-  wrap.appendChild(glCard("評価フロー", `
-    <ol style="${listStyle}">
-      <li><strong>一次評価</strong>:幹部 → 一般スタッフ(評価月の第1週目まで)</li>
-      <li><strong>二次評価</strong>:社員・リーダー → 幹部(評価月の第2週目まで)</li>
-      <li><strong>最終評価</strong>:店長 → 幹部・社員評価をもとに判断(評価月の第3週目まで)</li>
-    </ol>
-  `));
+    wrap.appendChild(glCard("評価フロー", `
+      <ol style="${listStyle}">
+        <li><strong>一次評価</strong>:幹部 → 一般スタッフ(評価月の第1週目まで)</li>
+        <li><strong>二次評価</strong>:社員・リーダー → 幹部(評価月の第2週目まで)</li>
+        <li><strong>最終評価</strong>:店長 → 幹部・社員評価をもとに判断(評価月の第3週目まで)</li>
+      </ol>
+    `));
+  }
 
   wrap.appendChild(glCard("評価時のチェックポイント(主要5カテゴリ)", `
     <ul style="${listStyle}">
