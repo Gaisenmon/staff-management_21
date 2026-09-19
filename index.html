@@ -914,7 +914,7 @@ const ADMIN_TABS = [
    マイページは自分の評価を確認、自己評価・目標設定は自分で入力する画面。 */
 const GENERAL_TABS = [
   {id:"myPage",     label:"マイページ"},
-  {id:"mySelfEval", label:"自己評価・目標設定"},
+  {id:"mySelfEval", label:"自己評価"},
   {id:"guideline",  label:"評価ガイドライン"},
 ];
 /* 評価者・管理者は権限者用(ADMIN_TABS)、それ以外は一般用(GENERAL_TABS)。
@@ -1001,6 +1001,20 @@ function advancePeriod(fiscalYear, period){
     return { period: PERIODS[0], fiscalYear: nextYear };
   }
   return { period, fiscalYear }; // これ以上進められない
+}
+/* 「1つ前の評価時期」を返す(1月の前は前年度の10月)。前年度自体が存在しない場合はnull。
+   目標は「設定した期間の次の期間に対する目標」として扱うため、
+   「今の期間の目標を振り返る」には1つ前の期間に設定された目標を見に行く必要がある。 */
+function previousPeriodRef(fiscalYear, period){
+  const idx = PERIODS.indexOf(period);
+  if(idx > 0) return { period: PERIODS[idx-1], fiscalYear };
+  const prevYear = String(Number(fiscalYear)-1);
+  if(state.years.includes(prevYear)) return { period: PERIODS[PERIODS.length-1], fiscalYear: prevYear };
+  return null;
+}
+function periodLabel(ref, currentFiscalYear){
+  if(!ref) return "";
+  return ref.fiscalYear===currentFiscalYear ? ref.period : `${ref.fiscalYear}年度${ref.period}`;
 }
 function applyDefaultYearAndPeriod(){
   if(defaultsApplied) return;
@@ -1598,7 +1612,10 @@ function renderEntry(){
   const goalBlock = document.createElement("div");
   goalBlock.style.marginTop = "18px";
   const goalHead = document.createElement("label");
-  goalHead.textContent = `本人への目標設定(${entrySelectedPeriod}分・マイページに表示されます)`;
+  const nextRefForEntry = advancePeriod(selectedYear, entrySelectedPeriod);
+  const nextLabelForEntry = (nextRefForEntry.period===entrySelectedPeriod && nextRefForEntry.fiscalYear===selectedYear)
+    ? "次回" : periodLabel(nextRefForEntry, selectedYear);
+  goalHead.textContent = `${nextLabelForEntry}までの目標設定(本人のマイページに表示されます)`;
   goalBlock.appendChild(goalHead);
   const goalArea = document.createElement("textarea");
   goalArea.placeholder = "例:レジを一人で回せるようになる";
@@ -3085,7 +3102,7 @@ function renderMyPage(){
     lockedCard.className = "card";
     lockedCard.style.cssText = "text-align:center;padding:40px 20px;";
     const reason = !pd.selfSubmitted
-      ? "自己評価・目標設定を提出すると、評価者の確定後に見られるようになります。"
+      ? "自己評価を提出すると、評価者の確定後に見られるようになります。"
       : "評価者による確定を待っています。確定されると自動的に見られるようになります。";
     lockedCard.innerHTML = `
       <div style="font-size:16px;font-weight:800;color:var(--ember-dark);margin-bottom:10px;">${myPagePeriod}分はまだ見られません</div>
@@ -3094,7 +3111,7 @@ function renderMyPage(){
     if(!pd.selfSubmitted){
       const gotoBtn = document.createElement("button");
       gotoBtn.className = "primary";
-      gotoBtn.textContent = "自己評価・目標設定を入力する";
+      gotoBtn.textContent = "自己評価を入力する";
       gotoBtn.onclick = ()=>{ mySelfPeriod = myPagePeriod; activeTab = "mySelfEval"; render(); };
       lockedCard.appendChild(gotoBtn);
     }
@@ -3102,17 +3119,25 @@ function renderMyPage(){
     return wrap;
   }
 
+  // 目標は「設定した期間の"次"の期間に対する目標」として扱う。
+  // なので「今見ている期間(myPagePeriod)の振り返り」には、1つ前の期間で設定された目標を表示する。
+  const prevRef = previousPeriodRef(selectedYear, myPagePeriod);
+  const prevPd = prevRef ? me.yearData[prevRef.fiscalYear]?.[prevRef.period] : null;
+  const prevSelfGoal = prevPd?.selfGoal || "";
+  const prevEvaluatorGoal = prevPd?.evaluatorGoal || "";
+
   const goalCard = document.createElement("div");
   goalCard.className = "card";
   goalCard.innerHTML = `
+    <div style="font-weight:800;font-size:14px;margin-bottom:10px;">前回設定した、今回までの目標(振り返り)</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
       <div>
         <div style="font-size:12px;color:var(--muted);font-weight:700;margin-bottom:4px;">自分の目標宣言</div>
-        <div style="font-size:14px;font-weight:700;white-space:pre-wrap;">${pd.selfGoal ? pd.selfGoal.replace(/</g,"&lt;") : "(未設定)"}</div>
+        <div style="font-size:14px;font-weight:700;white-space:pre-wrap;">${prevSelfGoal ? prevSelfGoal.replace(/</g,"&lt;") : "(未設定)"}</div>
       </div>
       <div>
         <div style="font-size:12px;color:var(--muted);font-weight:700;margin-bottom:4px;">評価者からの目標</div>
-        <div style="font-size:14px;font-weight:700;white-space:pre-wrap;">${pd.evaluatorGoal ? pd.evaluatorGoal.replace(/</g,"&lt;") : "(まだ設定されていません)"}</div>
+        <div style="font-size:14px;font-weight:700;white-space:pre-wrap;">${prevEvaluatorGoal ? prevEvaluatorGoal.replace(/</g,"&lt;") : "(まだ設定されていません)"}</div>
       </div>
     </div>
   `;
@@ -3180,10 +3205,36 @@ function renderMyPage(){
   `;
   wrap.appendChild(commentCard);
 
+  // 評価者との評価・自己評価のギャップを見た上で、次回までの目標をここで設定する。
+  // ここで書いた内容は、この期間(myPagePeriod)のselfGoalとして保存され、
+  // 次の期間が来た時に「前回設定した目標」として振り返り表示される。
+  const nextRefForGoal = advancePeriod(selectedYear, myPagePeriod);
+  const canAdvance = !(nextRefForGoal.period===myPagePeriod && nextRefForGoal.fiscalYear===selectedYear);
+  const nextLabelForGoal = canAdvance ? periodLabel(nextRefForGoal, selectedYear) : "次回";
+  const goalSetCard = document.createElement("div");
+  goalSetCard.className = "card";
+  const goalSetHead = document.createElement("label");
+  goalSetHead.textContent = `${nextLabelForGoal}までの目標を設定する`;
+  goalSetCard.appendChild(goalSetHead);
+  const goalSetInput = document.createElement("textarea");
+  goalSetInput.placeholder = "例:レジとドリンカーを一人で回せるようになる";
+  goalSetInput.value = pd.selfGoal || "";
+  goalSetInput.oninput = ()=>{ pd.selfGoal = goalSetInput.value; };
+  goalSetCard.appendChild(goalSetInput);
+  const goalSetRow = document.createElement("div");
+  goalSetRow.style.cssText = "margin-top:10px;display:flex;justify-content:flex-end;";
+  const goalSetBtn = document.createElement("button");
+  goalSetBtn.className = "primary";
+  goalSetBtn.textContent = "目標を保存する";
+  goalSetBtn.onclick = async ()=>{ await saveState(); };
+  goalSetRow.appendChild(goalSetBtn);
+  goalSetCard.appendChild(goalSetRow);
+  wrap.appendChild(goalSetCard);
+
   return wrap;
 }
 
-/* ============================== 自己評価・目標設定(一般スタッフ専用) ============================== */
+/* ============================== 自己評価(一般スタッフ専用) ============================== */
 function renderMySelfEval(){
   const wrap = document.createElement("div");
   const me = currentStaffObj();
@@ -3199,7 +3250,7 @@ function renderMySelfEval(){
   titleRow.className = "title-row";
   const h = document.createElement("h2");
   h.className = "title";
-  h.textContent = `自己評価・目標設定(${selectedYear}年度)`;
+  h.textContent = `自己評価(${selectedYear}年度)`;
   titleRow.appendChild(h);
   wrap.appendChild(titleRow);
   wrap.appendChild(renderPeriodButtons(mySelfPeriod, (p)=>{ mySelfPeriod = p; render(); }));
@@ -3207,31 +3258,12 @@ function renderMySelfEval(){
   if(pd.selfSubmitted){
     const doneBanner = document.createElement("div");
     doneBanner.style.cssText = "background:var(--green-bg);color:var(--green);border-radius:8px;padding:10px 14px;font-size:13px;font-weight:700;margin-bottom:16px;";
-    doneBanner.textContent = `${mySelfPeriod}分の自己評価・目標は提出済みです。再提出すると内容が上書きされます。`;
+    doneBanner.textContent = `${mySelfPeriod}分の自己評価は提出済みです。再提出すると内容が上書きされます。`;
     wrap.appendChild(doneBanner);
   }
 
   const card = document.createElement("div");
   card.className = "card";
-
-  const goalBox = document.createElement("div");
-  goalBox.style.marginBottom = "20px";
-  const goalLbl = document.createElement("label");
-  goalLbl.textContent = "今期の目標宣言";
-  goalBox.appendChild(goalLbl);
-  const goalInput = document.createElement("textarea");
-  goalInput.placeholder = "例:レジとドリンカーを一人で回せるようになる";
-  goalInput.value = pd.selfGoal || "";
-  goalInput.oninput = ()=>{ pd.selfGoal = goalInput.value; };
-  goalBox.appendChild(goalInput);
-  card.appendChild(goalBox);
-
-  if(pd.evaluatorGoal){
-    const evalGoalBox = document.createElement("div");
-    evalGoalBox.style.cssText = "background:var(--cream);border-radius:8px;padding:12px 14px;margin-bottom:20px;font-size:13px;";
-    evalGoalBox.innerHTML = `<div style="font-weight:800;margin-bottom:4px;">評価者から設定されている目標</div><div style="white-space:pre-wrap;">${pd.evaluatorGoal.replace(/</g,"&lt;")}</div>`;
-    card.appendChild(evalGoalBox);
-  }
 
   const subTitle = document.createElement("div");
   subTitle.style.cssText = "font-weight:800;font-size:15px;margin-bottom:12px;";
