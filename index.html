@@ -152,10 +152,11 @@
   table.pcard-table{border-collapse:collapse;width:100%;min-width:640px;}
   table.pcard-table td, table.pcard-table th{border:1px solid var(--line);}
   table.pcard-table td{padding:8px 6px;text-align:center;vertical-align:middle;font-size:12.5px;background:#fff;}
-  table.pcard-table td.cat-col{width:100px;font-weight:800;font-size:12.5px;text-align:center;padding:10px 6px;border-right:2px solid var(--charcoal);position:sticky;left:0;z-index:1;}
-  table.pcard-table td.item-col{width:150px;text-align:left;padding:8px 12px;font-weight:700;white-space:nowrap;position:sticky;left:100px;z-index:1;}
+  table.pcard-table td.cat-col{width:100px;font-weight:800;font-size:12.5px;text-align:center;padding:10px 6px;border-right:2px solid var(--charcoal);}
+  table.pcard-table td.item-col{width:150px;text-align:left;padding:8px 12px;font-weight:700;white-space:nowrap;position:sticky;left:0;z-index:1;background:#fff;}
   table.pcard-table th{padding:9px 6px;text-align:center;background:var(--charcoal);color:#EFE5D6;font-size:12.5px;white-space:nowrap;}
   table.pcard-table th.item-col-head{text-align:left;padding-left:12px;position:sticky;left:0;z-index:2;}
+  table.pcard-table th.cat-col-head{width:100px;}
   /* マイページの「評価者/自己評価」比較表は列数が少なく横スクロールの必要が無いため、
      ATS評価-個人用の横固定(sticky)・最小幅指定を外し、画面幅に自然に収まるようにする。
      固定したままだと、スマホの狭い画面では固定列だけで幅を使い切ってしまい、
@@ -2020,7 +2021,7 @@ function renderPersonal(){
 
   const thead = document.createElement("thead");
   const headRow = document.createElement("tr");
-  headRow.innerHTML = `<th colspan="2" class="item-col-head">評価内容</th>` + PERIODS.map(p=>`<th>${p}</th>`).join("");
+  headRow.innerHTML = `<th class="cat-col-head"></th><th class="item-col-head">評価内容</th>` + PERIODS.map(p=>`<th>${p}</th>`).join("");
   thead.appendChild(headRow);
   table.appendChild(thead);
 
