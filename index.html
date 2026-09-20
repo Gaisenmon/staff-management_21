@@ -156,6 +156,14 @@
   table.pcard-table td.item-col{width:150px;text-align:left;padding:8px 12px;font-weight:700;white-space:nowrap;position:sticky;left:100px;z-index:1;}
   table.pcard-table th{padding:9px 6px;text-align:center;background:var(--charcoal);color:#EFE5D6;font-size:12.5px;white-space:nowrap;}
   table.pcard-table th.item-col-head{text-align:left;padding-left:12px;position:sticky;left:0;z-index:2;}
+  /* マイページの「評価者/自己評価」比較表は列数が少なく横スクロールの必要が無いため、
+     ATS評価-個人用の横固定(sticky)・最小幅指定を外し、画面幅に自然に収まるようにする。
+     固定したままだと、スマホの狭い画面では固定列だけで幅を使い切ってしまい、
+     肝心のスコア列が画面外にはみ出て見切れてしまう。 */
+  table.pcard-table.pcard-table-compare{min-width:0;}
+  table.pcard-table.pcard-table-compare td.cat-col{position:static;width:64px;padding:8px 4px;}
+  table.pcard-table.pcard-table-compare td.item-col{position:static;left:auto;width:auto;}
+  table.pcard-table.pcard-table-compare th.item-col-head{position:static;}
   .pcard-score{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;font-weight:800;font-size:13px;border:2px solid var(--line);color:var(--muted);}
   .pcard-score.ready{background:var(--green-bg);color:var(--green);border-color:var(--green);}
   .pcard-score.mid{background:var(--training-bg);color:var(--training);border-color:var(--training);}
@@ -3335,7 +3343,7 @@ function renderMyPage(){
   const tableWrap = document.createElement("div");
   tableWrap.className = "table-wrap";
   const table = document.createElement("table");
-  table.className = "pcard-table";
+  table.className = "pcard-table pcard-table-compare";
   table.innerHTML = `<thead><tr><th colspan="2" class="item-col-head">評価項目</th><th>評価者</th><th>自己評価</th></tr></thead>`;
   const tbody = document.createElement("tbody");
   CATEGORIES.forEach(cat=>{
