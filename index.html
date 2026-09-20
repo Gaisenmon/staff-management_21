@@ -405,7 +405,7 @@ function computeTenureMonths(hireDateStr){
 const INITIAL_YEAR = "2026";
 function seedStaff(){
   return STAFF_SEED.map(s => ({
-    ...s, status:"active", isEvaluator: EVALUATOR_SEED_NAMES.some(n=>s.name.includes(n)), isEvaluatee:true, isAdmin:(s.employType==="社員" || s.name==="木内 健太"), hasLogin:false,
+    ...s, status:"active", isEvaluator: EVALUATOR_SEED_NAMES.some(n=>s.name.includes(n)), isEvaluatee:true, isAdmin:(s.employType==="社員" || s.name==="木内 健太"), hasLogin:false, growthNotes:[],
     yearData: { [INITIAL_YEAR]: emptyPeriods() },
   }));
 }
@@ -427,6 +427,7 @@ function migrateCoreState(s){
     if(st.isEvaluatee === undefined){ st.isEvaluatee = true; } // 被評価者かどうか。デフォルトは全員対象
     if(st.isAdmin === undefined){ st.isAdmin = (st.employType === "社員") || st.name === "木内 健太"; } // 管理者かどうか。既存の社員+木内さんは自動でtrue
     if(st.hasLogin === undefined){ st.hasLogin = false; }
+    if(!Array.isArray(st.growthNotes)) st.growthNotes = [];
     if(st.yearData){
       Object.values(st.yearData).forEach(yd=>{
         Object.values(yd).forEach(pd=>{
@@ -904,6 +905,7 @@ const ADMIN_TABS = [
   {id:"dashboard",  label:"ATS評価-全体"},
   {id:"personal",   label:"ATS評価-個人"},
   {id:"entry",      label:"ATS評価入力"},
+  {id:"goalTraining", label:"目標・教育"},
   {id:"ninebox",    label:"データ分析"},
   {id:"shifts",     label:"シフトデータ"},
   {id:"staffAdmin", label:"スタッフマスタ"},
@@ -915,6 +917,7 @@ const ADMIN_TABS = [
 const GENERAL_TABS = [
   {id:"myPage",     label:"マイページ"},
   {id:"mySelfEval", label:"自己評価"},
+  {id:"myNotes",    label:"メモ"},
   {id:"guideline",  label:"評価ガイドライン"},
 ];
 /* 評価者・管理者は権限者用(ADMIN_TABS)、それ以外は一般用(GENERAL_TABS)。
@@ -1036,6 +1039,7 @@ function applyDefaultYearAndPeriod(){
   nineboxPeriod = period;
   myPagePeriod = period;
   mySelfPeriod = period;
+  goalTrainingPeriod = period;
 }
 
 /* ---------- パソコン/スマホ表示切り替え ---------- */
@@ -1062,6 +1066,7 @@ function render(){
   if(!isPrivilegedUser()){
     if(activeTab==="myPage")         main.appendChild(renderMyPage());
     else if(activeTab==="mySelfEval") main.appendChild(renderMySelfEval());
+    else if(activeTab==="myNotes")    main.appendChild(renderMyNotes());
     else if(activeTab==="guideline")  main.appendChild(renderGuideline());
     else main.appendChild(renderMyPage());
     return;
@@ -1069,6 +1074,7 @@ function render(){
   if(activeTab==="dashboard")  main.appendChild(renderDashboard());
   if(activeTab==="entry")      main.appendChild(renderEntry());
   if(activeTab==="personal")   main.appendChild(renderPersonal());
+  if(activeTab==="goalTraining") main.appendChild(renderGoalTraining());
   if(activeTab==="ninebox")    main.appendChild(renderNinebox());
   if(activeTab==="shifts")     main.appendChild(renderShifts());
   if(activeTab==="staffAdmin") main.appendChild(renderStaffAdmin());
@@ -1384,6 +1390,7 @@ let personalChartPeriod = null; // ATS評価-個人のレーダーチャート�
 let nineboxPeriod = null; // 9BOXマップ用(初回ロード時に自動設定)
 let myPagePeriod = null;  // マイページ用(初回ロード時に自動設定)
 let mySelfPeriod = null;  // 自己評価・目標設定用(初回ロード時に自動設定)
+let goalTrainingPeriod = null; // 目標・教育タブ用(初回ロード時に自動設定)
 let nineboxFilter = "all"; // all | hall | kitchen
 const CAT_CLASS = {kitchen:"cat-kitchen", hall:"cat-hall", special:"cat-special", shift:"cat-shift", attitude:"cat-attitude"};
 const editSnapshots = {}; // key: `${staffId}:${period}` -> 直近保存時点のperiodDataのコピー(履歴の差分計算用)
@@ -1819,6 +1826,119 @@ function buildPersonalRadarSVG(labels, individualPct, avgPct){
   return `<svg viewBox="0 0 ${width} ${height}" width="100%" style="max-width:460px;display:block;margin:0 auto;">${rings}${axisLines}${avgPoly}${indPoly}${textLabels}</svg>`;
 }
 
+/* 一言メモ(成長ログ)。四半期の正式な評価とは別に、評価者・本人どちらからでも
+   気づいた時に一言残せる、期間に紐付かないタイムライン。マイページ・ATS評価-個人の
+   両方から同じ内容を読み書きする(同じstaffObj.growthNotesを共有)。 */
+let editingNoteId = null; // 一言メモの編集中ID(再描画をまたいで保持)
+function renderGrowthNotes(staffObj){
+  const card = document.createElement("div");
+  card.className = "card";
+  card.innerHTML = `<div style="font-weight:800;font-size:15px;margin-bottom:14px;">一言メモ</div>`;
+
+  const listWrap = document.createElement("div");
+  listWrap.style.cssText = "display:flex;flex-direction:column;gap:10px;margin-bottom:16px;max-height:320px;overflow-y:auto;";
+  const notes = [...(staffObj.growthNotes||[])].sort((a,b)=> b.ts.localeCompare(a.ts));
+  if(notes.length===0){
+    listWrap.innerHTML = `<div class="empty">まだメモはありません</div>`;
+  } else {
+    notes.forEach(n=>{
+      const item = document.createElement("div");
+      item.style.cssText = "background:var(--cream);border-radius:8px;padding:10px 12px;";
+      const dateStr = new Date(n.ts).toLocaleString("ja-JP",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"});
+      const isMine = n.author === currentPersonName;
+
+      if(editingNoteId === n.id){
+        const editArea = document.createElement("textarea");
+        editArea.value = n.text;
+        editArea.style.cssText = "min-height:50px;margin-bottom:6px;";
+        item.appendChild(editArea);
+        const editRow = document.createElement("div");
+        editRow.style.cssText = "display:flex;gap:6px;justify-content:flex-end;";
+        const cancelBtn = document.createElement("button");
+        cancelBtn.className = "ghost small";
+        cancelBtn.textContent = "キャンセル";
+        cancelBtn.onclick = ()=>{ editingNoteId = null; render(); };
+        const saveEditBtn = document.createElement("button");
+        saveEditBtn.className = "primary";
+        saveEditBtn.textContent = "保存";
+        saveEditBtn.onclick = async ()=>{
+          const v = editArea.value.trim();
+          if(!v) return;
+          n.text = v;
+          editingNoteId = null;
+          await saveState();
+          render();
+        };
+        editRow.appendChild(cancelBtn);
+        editRow.appendChild(saveEditBtn);
+        item.appendChild(editRow);
+      } else {
+        const headerRow = document.createElement("div");
+        headerRow.style.cssText = "display:flex;justify-content:space-between;align-items:flex-start;gap:8px;";
+        const meta = document.createElement("div");
+        meta.style.cssText = "font-size:11px;color:var(--muted);font-weight:700;";
+        meta.textContent = `${n.author||""} ・ ${dateStr}`;
+        headerRow.appendChild(meta);
+        if(isMine){
+          const actions = document.createElement("div");
+          actions.style.cssText = "display:flex;gap:8px;flex:none;";
+          const editBtn = document.createElement("button");
+          editBtn.textContent = "編集";
+          editBtn.style.cssText = "background:none;border:none;color:var(--muted);font-size:11px;cursor:pointer;font-family:inherit;text-decoration:underline;padding:0;";
+          editBtn.onclick = ()=>{ editingNoteId = n.id; render(); };
+          const delBtn = document.createElement("button");
+          delBtn.textContent = "削除";
+          delBtn.style.cssText = "background:none;border:none;color:#B23A2E;font-size:11px;cursor:pointer;font-family:inherit;text-decoration:underline;padding:0;";
+          delBtn.onclick = ()=>{
+            showModal("このメモを削除しますか?", async ()=>{
+              staffObj.growthNotes = (staffObj.growthNotes||[]).filter(x=>x.id!==n.id);
+              await saveState();
+              render();
+            }, {confirmLabel:"削除する"});
+          };
+          actions.appendChild(editBtn);
+          actions.appendChild(delBtn);
+          headerRow.appendChild(actions);
+        }
+        item.appendChild(headerRow);
+        const textDiv = document.createElement("div");
+        textDiv.style.cssText = "font-size:13.5px;white-space:pre-wrap;margin-top:3px;";
+        textDiv.textContent = n.text || "";
+        item.appendChild(textDiv);
+      }
+      listWrap.appendChild(item);
+    });
+  }
+  card.appendChild(listWrap);
+
+  const inputRow = document.createElement("div");
+  inputRow.style.cssText = "display:flex;gap:8px;align-items:flex-end;";
+  const input = document.createElement("textarea");
+  input.placeholder = "気づいたことを一言(例:今日のレジ対応、落ち着いて対応できてた)";
+  input.style.cssText = "min-height:50px;flex:1;";
+  inputRow.appendChild(input);
+  const addBtn = document.createElement("button");
+  addBtn.className = "primary";
+  addBtn.textContent = "追加";
+  addBtn.onclick = async ()=>{
+    const text = input.value.trim();
+    if(!text) return;
+    if(!Array.isArray(staffObj.growthNotes)) staffObj.growthNotes = [];
+    staffObj.growthNotes.push({
+      id: "n"+Date.now()+Math.random().toString(36).slice(2,6),
+      ts: new Date().toISOString(),
+      author: currentPersonName || "(不明)",
+      text,
+    });
+    await saveState();
+    render();
+  };
+  inputRow.appendChild(addBtn);
+  card.appendChild(inputRow);
+
+  return card;
+}
+
 function renderPersonal(){
   const wrap = document.createElement("div");
   const h = document.createElement("h2");
@@ -1982,6 +2102,57 @@ function renderPersonal(){
 
   return wrap;
 }
+/* ============================== 目標・教育 ============================== */
+function renderGoalTraining(){
+  const wrap = document.createElement("div");
+  const h = document.createElement("h2");
+  h.className = "title";
+  h.textContent = `目標・教育(${selectedYear}年度)`;
+  wrap.appendChild(h);
+
+  const card = document.createElement("div");
+  card.className = "card no-print";
+  const picker = document.createElement("div");
+  picker.className = "staff-picker";
+  picker.innerHTML = `<label>対象スタッフ</label>`;
+  const visibleStaff = state.staff.filter(s => s.isEvaluatee && (entryShowInactive || s.status==="active"));
+  if(!entrySelectedId || !visibleStaff.some(s=>s.id===entrySelectedId)) entrySelectedId = visibleStaff[0]?.id;
+  picker.appendChild(buildStaffSearchInput(visibleStaff, entrySelectedId, (id)=>{ entrySelectedId = id; render(); }));
+  card.appendChild(picker);
+  wrap.appendChild(card);
+
+  const staffObj = state.staff.find(s=>s.id===entrySelectedId);
+  if(!staffObj){ return wrap; }
+  if(!staffObj.yearData[selectedYear]) staffObj.yearData[selectedYear] = emptyPeriods();
+
+  wrap.appendChild(renderPeriodButtons(goalTrainingPeriod, (p)=>{ goalTrainingPeriod = p; render(); }));
+
+  // 目標は「設定した期間の次の期間に対する目標」として扱うため、1つ前の期間の値を見る
+  const prevRef = previousPeriodRef(selectedYear, goalTrainingPeriod);
+  const prevPd = prevRef ? staffObj.yearData[prevRef.fiscalYear]?.[prevRef.period] : null;
+
+  const goalCard = document.createElement("div");
+  goalCard.className = "card";
+  goalCard.innerHTML = `
+    <div style="font-weight:800;font-size:14px;margin-bottom:10px;">${goalTrainingPeriod}に向けた目標</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+      <div>
+        <div style="font-size:12px;color:var(--muted);font-weight:700;margin-bottom:4px;">本人の目標宣言</div>
+        <div style="font-size:14px;font-weight:700;white-space:pre-wrap;">${prevPd?.selfGoal ? prevPd.selfGoal.replace(/</g,"&lt;") : "(未設定)"}</div>
+      </div>
+      <div>
+        <div style="font-size:12px;color:var(--muted);font-weight:700;margin-bottom:4px;">評価者の目標設定</div>
+        <div style="font-size:14px;font-weight:700;white-space:pre-wrap;">${prevPd?.evaluatorGoal ? prevPd.evaluatorGoal.replace(/</g,"&lt;") : "(未設定)"}</div>
+      </div>
+    </div>
+  `;
+  wrap.appendChild(goalCard);
+
+  wrap.appendChild(renderGrowthNotes(staffObj));
+
+  return wrap;
+}
+
 /* ============================== 9BOXマップ ============================== */
 /* その項目に関係する所属の在籍・被評価者のうち、★基準を満たしている人を返す(単一障害点検出用) */
 /* その項目に関係する所属・雇用区分の在籍・被評価者のうち、★基準を満たしている人を返す(単一障害点検出用)。
@@ -2704,7 +2875,7 @@ function renderStaffAdmin(){
     state.years.forEach(y => { yearData[y] = emptyPeriods(); });
     state.staff.push({
       id: "s"+Date.now(), code, name, employType, affiliation, hireDate, status:"active", yearData,
-      isEvaluator:false, isEvaluatee:true, isAdmin:false, hasLogin:false,
+      isEvaluator:false, isEvaluatee:true, isAdmin:false, hasLogin:false, growthNotes:[],
     });
     saveState();
     render();
@@ -3330,6 +3501,22 @@ function renderMySelfEval(){
   card.appendChild(saveRow);
 
   wrap.appendChild(card);
+  return wrap;
+}
+
+/* ============================== メモ(一般スタッフ専用) ============================== */
+function renderMyNotes(){
+  const wrap = document.createElement("div");
+  const me = currentStaffObj();
+  if(!me){
+    wrap.innerHTML = `<div class="card"><div class="empty">ログイン中のスタッフ情報が見つかりませんでした。</div></div>`;
+    return wrap;
+  }
+  const h = document.createElement("h2");
+  h.className = "title";
+  h.textContent = "メモ";
+  wrap.appendChild(h);
+  wrap.appendChild(renderGrowthNotes(me));
   return wrap;
 }
 
