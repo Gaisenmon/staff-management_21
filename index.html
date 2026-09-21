@@ -191,6 +191,8 @@
     thead{display:table-header-group;} /* 表が複数ページにまたがる時、見出し行を各ページの先頭に繰り返す */
   }
   .sync-row{display:flex;align-items:center;gap:10px;margin-bottom:12px;font-size:11px;color:#C8BBA8;}
+  #reload-btn{background:transparent;border:1px solid rgba(255,255,255,0.3);color:#EFE5D6;border-radius:20px;padding:2px 10px;font-size:10.5px;cursor:pointer;font-family:inherit;margin-left:auto;flex:none;}
+  #reload-btn:hover{background:rgba(255,255,255,0.1);}
   .sync-dot{width:8px;height:8px;border-radius:50%;background:#5EA36B;flex:none;}
   .sync-dot.off{background:#B23A2E;}
 
@@ -237,7 +239,7 @@
         <div id="top-right-slot" style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:none;"></div>
       </div>
     </div>
-    <div class="sync-row"><span class="sync-dot" id="sync-dot"></span><span id="sync-label">同期状態を確認中...</span></div>
+    <div class="sync-row"><span class="sync-dot" id="sync-dot"></span><span id="sync-label">同期状態を確認中...</span><button id="reload-btn" title="ページを再読み込みします(ホーム画面に追加している場合、更新ボタンが無いためこちらをお使いください)">⟳ 更新</button></div>
     <nav id="tabs"></nav>
   </header>
   <main id="main"></main>
@@ -3845,6 +3847,10 @@ function startApp(){
     });
   });
 }
+
+/* ページを再読み込みするボタン。ホーム画面に追加してアプリ化して使うと
+   Safariの更新ボタンが使えなくなるため、代わりにアプリ内に用意している。 */
+document.getElementById("reload-btn").onclick = ()=> window.location.reload();
 
 /* ---- ログイン画面の制御 ---- */
 document.getElementById("login-btn").onclick = async ()=>{
