@@ -1460,13 +1460,11 @@ function renderEntry(){
     copyBtn.textContent = `${prevLabel}の評価を反映`;
     copyBtn.style.cssText = "margin-left:auto;background:#fff;border:1px solid var(--ember);color:var(--ember-dark);border-radius:20px;padding:6px 16px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;";
     copyBtn.onclick = ()=>{
-      showModal(`${entrySelectedPeriod}分の入力内容を、${prevLabel}の内容で上書きします。よろしいですか?`, ()=>{
+      showModal(`${entrySelectedPeriod}分のスコア・加点を、${prevLabel}の内容で上書きします(コメントは反映されません)。よろしいですか?`, ()=>{
         editingForm = true;
         const prev = staffObj.yearData[prevRef.year][prevRef.period];
         periodData.scores = JSON.parse(JSON.stringify(prev.scores));
         periodData.bonus = prev.bonus;
-        periodData.comment = prev.comment;
-        periodData.evaluator = prev.evaluator;
         render();
       }, {confirmLabel:"反映する"});
     };
