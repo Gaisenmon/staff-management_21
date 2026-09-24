@@ -37,26 +37,15 @@
   header{background:linear-gradient(135deg, var(--charcoal), var(--charcoal-2));color:#F2E9DC;padding:20px 26px 0 26px;border-bottom:4px solid var(--ember);}
   .brand{display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap;}
   .brand h1{font-size:18px;margin:0;font-weight:800;letter-spacing:.02em;white-space:nowrap;}
-  .brand .tag{font-size:11px;color:#C8BBA8;border:1px solid rgba(255,255,255,.25);border-radius:20px;padding:2px 10px;}
-  .mode-toggle{
-    display:flex;gap:2px;
-    background:rgba(255,255,255,0.08);border-radius:20px;padding:2px;flex:none;
-  }
-  .mode-toggle button{
-    background:transparent;border:none;color:#C8BBA8;padding:4px 12px;
-    font-size:11px;font-weight:700;border-radius:16px;cursor:pointer;font-family:inherit;
-  }
-  .mode-toggle button.active{background:var(--ember);color:#fff;}
 
   /* ===== スマホ専用モード(PC版のレイアウトとは完全に切り離した見た目) ===== */
   body.mobile-mode header{padding:14px 14px 0 14px;}
-  body.mobile-mode .brand{flex-direction:column;align-items:flex-start;gap:8px;justify-content:flex-start !important;}
+  body.mobile-mode .brand{flex-direction:row;flex-wrap:nowrap;align-items:center !important;gap:8px;margin-bottom:6px;}
   body.mobile-mode .brand h1{font-size:16px;}
-  body.mobile-mode .brand > div{align-self:flex-end;} /* パソコン/スマホ切替・「⋮」のかたまりを画面右上に寄せる */
+  body.mobile-mode .brand > div{align-self:center;}
   body.mobile-mode #top-right-slot{
     display:flex !important;flex-direction:row !important;flex-wrap:wrap;
-    align-items:center !important;justify-content:flex-end !important;width:100%;gap:8px;
-    order:-1; /* パソコン/スマホ切り替えより上に表示 */
+    align-items:center !important;justify-content:flex-end !important;gap:8px;
   }
   body.mobile-mode .sync-row{font-size:10px;margin-bottom:8px;}
   /* タブは折り返さず横スクロールに(前のホール運営システムと同じ方式) */
@@ -68,7 +57,6 @@
   body.mobile-mode .title-row{flex-direction:column;align-items:stretch;gap:10px;}
   body.mobile-mode .chart-grid{grid-template-columns:1fr !important;}
   body.mobile-mode .meta-row{flex-direction:column;gap:6px;}
-  body.mobile-mode .item-name{width:92px !important;font-size:11.5px;}
   body.mobile-mode .staff-picker{max-width:none;}
   body.mobile-mode table{font-size:11px;}
   body.mobile-mode .btn-group button{padding:7px 12px;font-size:12px;}
@@ -133,15 +121,6 @@
   body.mobile-mode .row{flex-direction:column;align-items:stretch;}
 
   /* 紙の評価票を模した表 */
-  .paper-table-wrap{overflow-x:auto;border:1px solid var(--charcoal);border-radius:6px;}
-  table.paper-table{border-collapse:collapse;width:100%;min-width:640px;}
-  table.paper-table td{border:1px solid var(--line);padding:0;vertical-align:middle;}
-  table.paper-table td.cat-col{
-    width:110px;font-weight:800;font-size:12.5px;text-align:center;padding:10px 6px;
-    border-right:2px solid var(--charcoal);writing-mode:horizontal-tb;
-  }
-  table.paper-table td.item-col{width:150px;font-weight:700;font-size:13px;padding:8px 12px;background:#fff;}
-  table.paper-table td.opts-col{padding:6px 10px;background:#fff;}
   .cat-kitchen{background:var(--cat-kitchen);}
   .cat-hall{background:var(--cat-hall);}
   .cat-special{background:var(--cat-special);}
@@ -177,7 +156,7 @@
 
   button.primary{background:var(--ember);color:#fff;border:none;border-radius:8px;padding:10px 20px;font-weight:800;font-size:13.5px;cursor:pointer;font-family:inherit;}
   button.primary:hover{background:var(--ember-dark);}
-  .save-toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--charcoal);color:#fff;padding:10px 20px;border-radius:30px;font-size:13px;font-weight:700;opacity:0;transition:.25s;pointer-events:none;z-index:50;}
+  .save-toast{position:fixed;top:14px;left:50%;transform:translateX(-50%) translateY(-20px);background:var(--charcoal);color:#fff;padding:10px 20px;border-radius:30px;font-size:13px;font-weight:700;opacity:0;transition:.25s;pointer-events:none;z-index:50;}
   .save-toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 
   /* 印刷 / PDF保存用。個人タブの「印刷 / PDF保存」ボタンから window.print() を呼ぶ想定 */
@@ -214,6 +193,84 @@
   .login-card button{width:100%;margin-top:4px;}
   .login-error{color:#B23A2E;font-size:12.5px;margin-top:10px;min-height:16px;}
   .logout-btn{background:transparent;border:1px solid rgba(255,255,255,0.25);color:#EFE5D6;border-radius:20px;padding:3px 12px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap;}
+  /* 一般ユーザーのスマホ下部ナビ */
+  nav .ts{display:none;}
+  body.mobile-mode nav.general-nav{position:fixed;left:0;right:0;bottom:0;z-index:60;background:var(--charcoal);border-top:3px solid var(--ember);padding:5px 4px calc(5px + env(safe-area-inset-bottom));gap:2px;overflow:visible;flex-wrap:nowrap;}
+  body.mobile-mode nav.general-nav button{flex:1 1 0;min-width:0;top:0;border-radius:8px;padding:11px 2px;font-size:12px;text-align:center;}
+  body.mobile-mode nav.general-nav button.active{background:var(--ember);color:#fff;}
+  body.mobile-mode nav.general-nav .tl{display:none;}
+  body.mobile-mode nav.general-nav .ts{display:inline;}
+  body.has-bottom-nav main{padding-bottom:96px !important;}
+  body.has-bottom-nav .sticky-actions{bottom:58px;}
+  body.has-bottom-nav header{padding-bottom:12px;}
+  /* マイページ:ズレ一覧・折りたたみカード */
+  .diff-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 2px;border-top:1px solid var(--line);font-size:13.5px;}
+  .diff-row .nm{font-weight:800;flex:1 1 110px;}
+  .diff-row .val{color:var(--muted);font-weight:700;white-space:nowrap;}
+  .diff-row .val.strong.up{color:var(--green);}
+  .diff-row .val.strong.down{color:var(--ember-dark);}
+  .diff-row .arrow{color:var(--muted);}
+  details.fold-card > summary{cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;}
+  details.fold-card > summary::-webkit-details-marker{display:none;}
+  details.fold-card > summary::after{content:"▸ 開く";font-size:12px;color:var(--muted);font-weight:700;}
+  details.fold-card[open] > summary::after{content:"▾ 閉じる";}
+  /* 点数入力(評価入力・自己評価共通) */
+  .score-list{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#fff;}
+  .score-cat{font-weight:800;font-size:12.5px;padding:7px 12px;border-top:1px solid var(--line);}
+  .score-cat:first-child{border-top:none;}
+  .score-item{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:8px 12px;border-top:1px solid var(--line);}
+  .score-item .nm{flex:0 1 170px;font-weight:700;font-size:13.5px;}
+  .score-item .chip-group{flex:0 0 auto;flex-wrap:nowrap;}
+  .score-item .chip-btn{width:36px;height:36px;font-size:13.5px;}
+  /* 保存ボタン・合計点を画面下に固定するバー */
+  .sticky-actions{position:sticky;bottom:0;z-index:5;background:#fff;border-top:1px solid var(--line);margin:18px -20px -20px;padding:12px 20px;border-radius:0 0 14px 14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;box-shadow:0 -6px 16px rgba(36,30,25,.06);}
+  .sticky-actions .total{font-weight:800;font-size:14px;color:var(--ember-dark);margin-right:auto;}
+  .sticky-actions .note{font-size:12px;color:var(--muted);margin-right:auto;flex:1 1 200px;}
+  .sticky-actions .btns{display:flex;gap:8px;margin-left:auto;}
+  .sticky-actions > button.primary{margin-left:auto;}
+  .sticky-actions button.primary{padding:10px 14px;white-space:nowrap;}
+  body.mobile-mode .sticky-actions{margin:14px -14px -14px;padding:10px 14px;border-radius:0 0 10px 10px;}
+  /* ホーム画面・評価担当 */
+  .role-chip{border:1px solid var(--line);background:#fff;color:var(--gray-ink);border-radius:20px;padding:3px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap;}
+  .role-chip.on{background:var(--amber-bg);border-color:var(--amber-bg);color:var(--amber);}
+  .role-chip.on:first-child{background:var(--charcoal);border-color:var(--charcoal);color:#fff;}
+  th.sm-sticky, td.sm-sticky{position:sticky;left:0;z-index:1;}
+  td.sm-sticky{background:#fff;box-shadow:1px 0 0 var(--line);}
+  th.sm-sticky{z-index:3;}
+  .assign-select{width:auto;min-width:120px;padding:5px 8px;font-size:12.5px;border-radius:8px;}
+  .assign-select.unset{color:var(--red, #B23A2E);border-color:#F1C9C3;}
+  button.btn-danger{background:transparent;color:var(--red, #B23A2E);border:1px solid #E7B4AD;border-radius:8px;padding:8px 14px;font-weight:700;font-size:12.5px;cursor:pointer;font-family:inherit;}
+  button.btn-ghost{background:transparent;color:var(--ember-dark);border:1px solid var(--ember);border-radius:8px;padding:8px 16px;font-weight:700;font-size:12.5px;cursor:pointer;font-family:inherit;white-space:nowrap;}
+  .home-card-title{font-weight:800;font-size:15px;margin-bottom:4px;}
+  .home-card-sub{font-size:12px;color:var(--muted);margin-bottom:12px;}
+  .todo-group-head{font-size:12.5px;font-weight:800;color:var(--muted);margin:14px 0 6px;display:flex;align-items:center;gap:8px;}
+  .todo-group-head:first-of-type{margin-top:4px;}
+  .todo-row{display:flex;align-items:center;gap:10px;width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;margin-bottom:6px;cursor:pointer;font-family:inherit;font-size:14px;text-align:left;color:var(--ink);}
+  .todo-row:hover{background:#FAF5EC;}
+  .todo-row .nm{font-weight:800;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .todo-row .arrow{color:var(--muted);font-weight:800;flex:none;}
+  .st-chip{flex:none;font-size:11px;font-weight:800;padding:2px 9px;border-radius:20px;white-space:nowrap;}
+  .st-chip.todo{background:#FBE4E1;color:var(--red, #B23A2E);}
+  .st-chip.doing{background:var(--amber-bg);color:var(--amber);}
+  .st-chip.done{background:var(--green-bg);color:var(--green);}
+  .st-chip.skip{background:var(--gray-bg);color:var(--gray-ink);}
+  .progress-bar{height:8px;border-radius:8px;background:var(--gray-bg);overflow:hidden;margin:6px 0 2px;}
+  .progress-bar > div{height:100%;background:var(--green);}
+  .home-task{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px;border-radius:10px;background:var(--cream, #FBF6EE);border:1px solid var(--line);margin-bottom:8px;}
+  .home-task .msg{flex:1;min-width:180px;font-size:14px;font-weight:700;}
+  .home-task.done .msg{color:var(--green);}
+  .menu-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;}
+  .menu-tile{display:flex;flex-direction:column;gap:4px;align-items:flex-start;text-align:left;padding:14px;border:1px solid var(--line);border-radius:12px;background:#fff;cursor:pointer;font-family:inherit;color:var(--ink);}
+  .menu-tile:hover{border-color:var(--ember);}
+  .menu-tile .t{font-weight:800;font-size:14px;}
+  .menu-tile .d{font-size:11.5px;color:var(--muted);line-height:1.5;}
+  .assign-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 2px;border-bottom:1px solid var(--line);}
+  .assign-row .nm{font-weight:700;font-size:13.5px;flex:1;min-width:120px;}
+  .assign-row select{flex:0 1 220px;min-width:150px;}
+  details > summary.todo-group-head{list-style:none;}
+  details > summary.todo-group-head::-webkit-details-marker{display:none;}
+  details > summary.todo-group-head::after{content:"▸ 表示";font-weight:700;}
+  details[open] > summary.todo-group-head::after{content:"▾ 閉じる";}
 </style>
 </head>
 <body>
@@ -232,10 +289,6 @@
     <div class="brand" style="justify-content:space-between;align-items:flex-start;">
       <h1>凱旋門 ATS評価システム</h1>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
-        <div class="mode-toggle" id="mode-toggle">
-          <button data-mode="pc">パソコン</button>
-          <button data-mode="mobile">スマホ</button>
-        </div>
         <div id="top-right-slot" style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:none;"></div>
       </div>
     </div>
@@ -419,7 +472,7 @@ function computeTenureMonths(hireDateStr){
 const INITIAL_YEAR = "2026";
 function seedStaff(){
   return STAFF_SEED.map(s => ({
-    ...s, status:"active", isEvaluator: EVALUATOR_SEED_NAMES.some(n=>s.name.includes(n)), isEvaluatee:true, isAdmin:(s.employType==="社員" || s.name==="木内 健太"), hasLogin:false, growthNotes:[],
+    ...s, status:"active", isEvaluator: EVALUATOR_SEED_NAMES.some(n=>s.name.includes(n)), isEvaluatee:s.employType!=="社員", isAdmin:(s.employType==="社員" || s.name==="木内 健太"), hasLogin:false, growthNotes:[], assignedEvaluatorId:"",
     yearData: { [INITIAL_YEAR]: emptyPeriods() },
   }));
 }
@@ -438,10 +491,11 @@ function migrateCoreState(s){
   s.staff.forEach(st=>{
     if(!st.status){ st.status = st.active===false ? "resigned" : "active"; }
     if(st.isEvaluator === undefined){ st.isEvaluator = EVALUATOR_SEED_NAMES.some(n=>st.name.includes(n)); }
-    if(st.isEvaluatee === undefined){ st.isEvaluatee = true; } // 被評価者かどうか。デフォルトは全員対象
+    st.isEvaluatee = st.employType !== "社員"; // 被評価者かどうか。社員は別の評価指標のため常に対象外(評価データはその時点の値のまま残る)
     if(st.isAdmin === undefined){ st.isAdmin = (st.employType === "社員") || st.name === "木内 健太"; } // 管理者かどうか。既存の社員+木内さんは自動でtrue
     if(st.hasLogin === undefined){ st.hasLogin = false; }
     if(!Array.isArray(st.growthNotes)) st.growthNotes = [];
+    if(st.assignedEvaluatorId === undefined) st.assignedEvaluatorId = ""; // 評価担当(評価者のstaff id)
     if(st.yearData){
       Object.values(st.yearData).forEach(yd=>{
         Object.values(yd).forEach(pd=>{
@@ -498,7 +552,13 @@ function mergeHistoryForSave(latest, local, base){
   merged.sort((a,b)=> (b.ts||"").localeCompare(a.ts||"")); // 新しい順
   return merged;
 }
-async function saveState(){
+/* 保存は1つずつ順番に行う。連続操作で保存が並行すると、古い取得結果で新しい変更を上書きしうるため。 */
+let saveChain = Promise.resolve();
+function saveState(){
+  saveChain = saveChain.then(saveStateNow, saveStateNow);
+  return saveChain;
+}
+async function saveStateNow(){
   // ---- 本体(staff/years) ----
   try{
     const snap = await get(stateRef);
@@ -547,8 +607,7 @@ function setSyncStatus(ok){
   const dot = document.getElementById("sync-dot");
   const lbl = document.getElementById("sync-label");
   dot.classList.toggle("off", !ok);
-  const t = state?.updatedAt ? new Date(state.updatedAt).toLocaleString("ja-JP",{hour:"2-digit",minute:"2-digit",month:"numeric",day:"numeric"}) : "-";
-  lbl.textContent = (ok ? `全員と同期中(リアルタイム) ・ 最終更新 ${t}` : "オフライン") + ` ・ 店舗: ${STORE_ID}`;
+  lbl.textContent = (ok ? "全員と同期中(リアルタイム)" : "オフライン") + ` ・ 店舗: ${STORE_ID}`;
 }
 
 /* ---- ログインコードから「今ログインしているのが誰か」を自動判定する ---- */
@@ -570,6 +629,28 @@ function currentStaffObj(){
   if(!state) return null;
   return (state.staff||[]).find(s=>s.name===currentPersonName) || null;
 }
+/* 評価担当:担当に指定されている人が評価者から外れた・退職した場合は「未割り当て」として扱う */
+function assignedEvaluatorOf(staffObj){
+  if(!staffObj || !staffObj.assignedEvaluatorId) return null;
+  const ev = state.staff.find(s=>s.id===staffObj.assignedEvaluatorId);
+  return (ev && ev.isEvaluator && ev.status==="active" && ev.id!==staffObj.id) ? ev : null;
+}
+function activeEvaluatees(){
+  return state.staff.filter(s=>s.isEvaluatee && s.status==="active");
+}
+function assigneesOf(evaluatorId){
+  return activeEvaluatees().filter(s=> assignedEvaluatorOf(s)?.id===evaluatorId);
+}
+/* 評価の進み具合:todo=未入力 / doing=入力あり・未確定 / done=確定済み / skip=評価対象外 */
+function evalStatus(staffObj, year, period){
+  const pd = staffObj.yearData?.[year]?.[period];
+  if(!pd) return "todo";
+  if(pd.exempt) return "skip";
+  if(pd.confirmed) return "done";
+  const hasInput = Object.values(pd.scores||{}).some(v=>v>0) || (pd.bonus||0)>0 || (pd.comment||"").trim() || (pd.evaluatorGoal||"").trim();
+  return hasInput ? "doing" : "todo";
+}
+const EVAL_STATUS_LABEL = {todo:"未入力", doing:"入力中", done:"確定済み", skip:"対象外"};
 function isCurrentUserAdmin(){
   const s = currentStaffObj();
   return !!(s && s.isAdmin);
@@ -634,11 +715,18 @@ function showModal(message, onConfirm, opts){
   msg.textContent = message;
   box.appendChild(msg);
   const btnRow = document.createElement("div");
-  btnRow.style.cssText = "display:flex;justify-content:flex-end;gap:10px;";
+  btnRow.style.cssText = "display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;";
   const cancelBtn = document.createElement("button");
   cancelBtn.textContent = opts.cancelLabel || "キャンセル";
   cancelBtn.style.cssText = "background:#fff;border:1px solid var(--line);color:var(--muted);border-radius:8px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;";
-  cancelBtn.onclick = ()=> overlay.remove();
+  cancelBtn.onclick = ()=>{ overlay.remove(); if(opts.onCancel) opts.onCancel(); };
+  if(opts.altLabel){
+    const altBtn = document.createElement("button");
+    altBtn.textContent = opts.altLabel;
+    altBtn.style.cssText = "background:#fff;border:1px solid #E7B4AD;color:var(--red, #B23A2E);border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;margin-right:auto;";
+    altBtn.onclick = ()=>{ overlay.remove(); opts.onAlt(); };
+    btnRow.appendChild(altBtn);
+  }
   const okBtn = document.createElement("button");
   okBtn.className = "primary";
   okBtn.textContent = opts.confirmLabel || "OK";
@@ -829,7 +917,7 @@ function renderTopRightContent(){
     const sel = document.createElement("select");
     sel.style.cssText = "flex:1;font-size:12.5px;padding:5px 6px;";
     sel.innerHTML = state.years.map(y=>`<option value="${y}" ${selectedYear===y?"selected":""}>${y}年度</option>`).join("");
-    sel.onchange = ()=>{ selectedYear = sel.value; render(); };
+    sel.onchange = ()=> guardedNavigate(()=>{ selectedYear = sel.value; render(); }, ()=>{ sel.value = selectedYear; });
     yearRow.appendChild(sel);
     panel.appendChild(yearRow);
 
@@ -873,7 +961,7 @@ function renderTopRightContent(){
     const logoutBtn = document.createElement("button");
     logoutBtn.textContent = "ログアウト";
     logoutBtn.style.cssText = "background:#fff;border:1px solid #B23A2E;color:#B23A2E;border-radius:8px;padding:8px 12px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;text-align:left;";
-    logoutBtn.onclick = ()=> signOut(auth);
+    logoutBtn.onclick = ()=> guardedNavigate(()=> signOut(auth));
     panel.appendChild(logoutBtn);
 
     wrap.appendChild(panel);
@@ -914,8 +1002,33 @@ function diffAndLog(staffObj, year, period, before, after){
   });
 }
 
+/* ============================== 未保存ガード ==============================
+   評価入力・自己評価・マイページの目標で、保存していない変更がある状態で画面を離れようとしたら確認する。
+   (editingFormは入力欄にフォーカスしただけでもONになるため、未保存の判定には別のフラグを使う) */
+let unsaved = false;
+let leaveGuard = null; // 今の画面の {save(), discard()}。各画面の描画時に設定される
+function markDirty(){ unsaved = true; editingForm = true; }
+function clearDirty(){ unsaved = false; editingForm = false; }
+function guardedNavigate(go, onStay){
+  if(!unsaved || !leaveGuard){ go(); return; }
+  const g = leaveGuard;
+  showModal("保存していない変更があります。", async ()=>{
+    await g.save();
+    clearDirty();
+    go();
+  }, {
+    confirmLabel:"保存して移動", cancelLabel:"戻る",
+    altLabel:"保存せず移動", onAlt:()=>{ g.discard(); clearDirty(); go(); },
+    onCancel: onStay,
+  });
+}
+window.addEventListener("beforeunload", (e)=>{
+  if(unsaved){ e.preventDefault(); e.returnValue = ""; }
+});
+
 /* ============================== タブ ============================== */
 const ADMIN_TABS = [
+  {id:"home",       label:"ホーム"},
   {id:"dashboard",  label:"ATS評価-全体"},
   {id:"personal",   label:"ATS評価-個人"},
   {id:"entry",      label:"ATS評価入力"},
@@ -929,10 +1042,11 @@ const ADMIN_TABS = [
 /* 一般スタッフ(評価者でも管理者でもない被評価者)専用の、必要最小限のタブ構成。
    マイページは自分の評価を確認、自己評価・目標設定は自分で入力する画面。 */
 const GENERAL_TABS = [
+  {id:"home",       label:"ホーム"},
   {id:"myPage",     label:"マイページ"},
   {id:"mySelfEval", label:"自己評価"},
   {id:"myNotes",    label:"メモ"},
-  {id:"guideline",  label:"評価ガイドライン"},
+  {id:"guideline",  label:"評価ガイドライン", short:"ガイド"},
 ];
 /* 評価者・管理者は権限者用(ADMIN_TABS)、それ以外は一般用(GENERAL_TABS)。
    「評価者は管理者と同じものが見られる」という方針のため、isAdminだけでなくisEvaluatorも見る。 */
@@ -940,7 +1054,8 @@ function isPrivilegedUser(){
   const s = currentStaffObj();
   return !!(s && (s.isAdmin || s.isEvaluator));
 }
-let activeTab = "dashboard";
+let activeTab = "home";
+let homePeriod = null; // ホーム画面用(初回ロード時に自動設定)
 let dashboardFilter = "all";      // all | hall | kitchen
 let dashboardPeriod = null;       // 4月 | 7月 | 10月 | 1月 (初回ロード時に「直近で経過した時期」を自動設定)
 
@@ -948,14 +1063,17 @@ function renderTabs(){
   const nav = document.getElementById("tabs");
   nav.innerHTML = "";
   const tabsToUse = isPrivilegedUser() ? ADMIN_TABS : GENERAL_TABS;
+  // 一般ユーザーはタブが少ないので、スマホでは画面下の固定ナビにする
+  nav.classList.toggle("general-nav", !isPrivilegedUser());
+  document.body.classList.toggle("has-bottom-nav", !isPrivilegedUser() && displayMode==="mobile");
   if(!tabsToUse.some(t=>t.id===activeTab)){
     activeTab = tabsToUse[0].id;
   }
   tabsToUse.forEach(t=>{
     const b = document.createElement("button");
-    b.textContent = t.label;
+    b.innerHTML = `<span class="tl">${t.label}</span><span class="ts">${t.short || t.label}</span>`;
     b.className = t.id===activeTab ? "active" : "";
-    b.onclick = ()=>{ editingForm = false; topMenuOpen = false; openStaffActionMenuId = null; activeTab = t.id; render(); };
+    b.onclick = ()=> guardedNavigate(()=>{ editingForm = false; topMenuOpen = false; activeTab = t.id; render(); });
     nav.appendChild(b);
   });
 }
@@ -1054,19 +1172,27 @@ function applyDefaultYearAndPeriod(){
   myPagePeriod = period;
   mySelfPeriod = period;
   goalTrainingPeriod = period;
+  homePeriod = period;
 }
 
 /* ---------- パソコン/スマホ表示切り替え ---------- */
-let displayMode = (typeof window!=="undefined" && window.matchMedia && window.matchMedia("(max-width:760px)").matches) ? "mobile" : "pc";
+/* 表示モードは画面幅から自動で決める(手動の切り替えボタンは廃止) */
+const narrowQuery = (typeof window!=="undefined" && window.matchMedia) ? window.matchMedia("(max-width:760px)") : null;
+let displayMode = narrowQuery && narrowQuery.matches ? "mobile" : "pc";
 function applyDisplayMode(){
   document.body.classList.toggle("mobile-mode", displayMode==="mobile");
-  document.querySelectorAll("#mode-toggle button").forEach(b=>{
-    b.classList.toggle("active", b.dataset.mode===displayMode);
-  });
 }
-document.querySelectorAll("#mode-toggle button").forEach(b=>{
-  b.onclick = ()=>{ displayMode = b.dataset.mode; applyDisplayMode(); };
-});
+if(narrowQuery){
+  const onWidthChange = (e)=>{
+    const next = e.matches ? "mobile" : "pc";
+    if(next===displayMode) return;
+    displayMode = next;
+    applyDisplayMode();
+    if(firstLoadDone) render();
+  };
+  if(narrowQuery.addEventListener) narrowQuery.addEventListener("change", onWidthChange);
+  else if(narrowQuery.addListener) narrowQuery.addListener(onWidthChange);
+}
 applyDisplayMode();
 
 function render(){
@@ -1077,6 +1203,8 @@ function render(){
   topSlot.appendChild(renderTopRightContent());
   const main = document.getElementById("main");
   main.innerHTML = "";
+  leaveGuard = null;
+  if(activeTab==="home"){ main.appendChild(isPrivilegedUser() ? renderHomeAdmin() : renderHomeGeneral()); return; }
   if(!isPrivilegedUser()){
     if(activeTab==="myPage")         main.appendChild(renderMyPage());
     else if(activeTab==="mySelfEval") main.appendChild(renderMySelfEval());
@@ -1182,7 +1310,7 @@ function renderDashboard(){
   const catRow = document.createElement("tr");
   catRow.className = "cat-row";
   const metaTh = document.createElement("th");
-  metaTh.colSpan = 6; metaTh.textContent = "";
+  metaTh.colSpan = 4; metaTh.textContent = "";
   catRow.appendChild(metaTh);
   CATEGORIES.forEach(cat=>{
     const th = document.createElement("th");
@@ -1191,23 +1319,26 @@ function renderDashboard(){
     catRow.appendChild(th);
   });
   const tailTh = document.createElement("th");
-  tailTh.colSpan = 2; tailTh.textContent = "";
+  tailTh.colSpan = 5; tailTh.textContent = "";
   catRow.appendChild(tailTh);
   thead.appendChild(catRow);
 
   const headRow = document.createElement("tr");
-  const metaCols = [
-    {key:"code", label:"社員CD"}, {key:"name", label:"氏名"}, {key:"employType", label:"雇用区分"},
-    {key:"affiliation", label:"所属"}, {key:"tenure", label:"勤続"}, {key:"evaluator", label:"評価者"},
-  ];
-  metaCols.forEach(mc=>{
+  // よく見る情報(氏名・状態・合計)を左に寄せ、氏名は横スクロールしても固定する
+  const STRING_KEYS = ["name","employType","affiliation","evaluator","status"];
+  const addHeadCols = (cols)=> cols.forEach(mc=>{
     const th = document.createElement("th");
     th.className = mc.key==="name" ? "name-col" : "";
     th.style.cursor = "pointer";
     th.textContent = mc.label + arrow(mc.key);
-    th.onclick = ()=> applySort(mc.key, (mc.key==="name"||mc.key==="employType"||mc.key==="affiliation"||mc.key==="evaluator") ? "string" : "number");
+    th.onclick = ()=> applySort(mc.key, STRING_KEYS.includes(mc.key) ? "string" : "number");
     headRow.appendChild(th);
   });
+  addHeadCols([{key:"name", label:"氏名"}, {key:"status", label:"状態"}, {key:"total", label:"合計点数"}, {key:"bonus", label:"加点"}]);
+  const metaCols = [
+    {key:"code", label:"社員CD"}, {key:"employType", label:"雇用区分"},
+    {key:"affiliation", label:"所属"}, {key:"tenure", label:"勤続"}, {key:"evaluator", label:"評価者"},
+  ];
   ALL_ITEMS.forEach(it=>{
     const th = document.createElement("th");
     th.title = `${it.name}(0〜${it.max}点)`;
@@ -1216,13 +1347,7 @@ function renderDashboard(){
     th.onclick = ()=> applySort(it.name, "number");
     headRow.appendChild(th);
   });
-  [{key:"bonus", label:"加点"}, {key:"total", label:"合計点数"}].forEach(tc=>{
-    const th = document.createElement("th");
-    th.style.cursor = "pointer";
-    th.textContent = tc.label + arrow(tc.key);
-    th.onclick = ()=> applySort(tc.key, "number");
-    headRow.appendChild(th);
-  });
+  addHeadCols(metaCols);
   thead.appendChild(headRow);
   table.appendChild(thead);
 
@@ -1242,6 +1367,7 @@ function renderDashboard(){
     else if(s.col==="evaluator"){ va = aPeriod.evaluator || ""; vb = bPeriod.evaluator || ""; }
     else if(s.col==="tenure"){ va = a.hireDate || "9999"; vb = b.hireDate || "9999"; }
     else if(s.col==="bonus"){ va = aPeriod.bonus ?? 0; vb = bPeriod.bonus ?? 0; }
+    else if(s.col==="status"){ const o={todo:0,doing:1,done:2,skip:3}; va = o[evalStatus(a, selectedYear, dashboardPeriod)]; vb = o[evalStatus(b, selectedYear, dashboardPeriod)]; }
     else if(s.col==="total"){ va = totalScore(aPeriod); vb = totalScore(bPeriod); }
     else { va = aScores[s.col] ?? 0; vb = bScores[s.col] ?? 0; }
     let cmp;
@@ -1254,14 +1380,14 @@ function renderDashboard(){
   exportBtn.textContent = "CSVエクスポート";
   exportBtn.style.cssText = "background:#fff;border:1px solid var(--ember);color:var(--ember-dark);border-radius:20px;padding:6px 16px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;";
   exportBtn.onclick = ()=>{
-    const header = ["社員CD","氏名","雇用区分","所属","勤続","評価者", ...ALL_ITEMS.map(it=>it.name), "加点","合計点数"];
+    const header = ["氏名","状態","合計点数","加点", ...ALL_ITEMS.map(it=>it.name), "社員CD","雇用区分","所属","勤続","評価者"];
     const rows = [header];
     sorted.forEach(st=>{
       const period = st.yearData[selectedYear][dashboardPeriod];
       rows.push([
-        st.code, st.name, st.employType, st.affiliation, computeTenureText(st.hireDate), period.evaluator || "",
+        st.name, EVAL_STATUS_LABEL[evalStatus(st, selectedYear, dashboardPeriod)], formatTotal(period), period.bonus ?? 0,
         ...ALL_ITEMS.map(it => period.scores[it.name] ?? 0),
-        period.bonus ?? 0, formatTotal(period),
+        st.code, st.employType, st.affiliation, computeTenureText(st.hireDate), period.evaluator || "",
       ]);
     });
     downloadCSV(`ATS評価_${selectedYear}年度_${dashboardPeriod}.csv`, rows);
@@ -1275,20 +1401,22 @@ function renderDashboard(){
     const period = st.yearData[selectedYear][dashboardPeriod];
     const scores = period.scores;
     const tr = document.createElement("tr");
+    const stt = evalStatus(st, selectedYear, dashboardPeriod);
     tr.innerHTML = `
-      <td>${st.code}</td>
-      <td class="name-col">${st.name}</td>
-      <td>${st.employType}</td>
-      <td><span class="aff-chip ${affClass(st.affiliation)}">${st.affiliation}</span></td>
-      <td style="color:var(--muted);font-size:11px;">${computeTenureText(st.hireDate)}</td>
-      <td>${period.evaluator || "-"}</td>
+      <td class="name-col sm-sticky">${st.name}</td>
+      <td><span class="st-chip ${stt}">${EVAL_STATUS_LABEL[stt]}</span></td>
+      <td style="font-weight:800;color:${period.exempt ? "var(--gray-ink)" : "var(--ember-dark)"};">${formatTotal(period)}</td>
+      <td>${period.bonus ?? 0}</td>
       ${ALL_ITEMS.map(it=>{
         const v = scores[it.name] ?? 0;
         const cls = scoreClass(v, it.max);
         return `<td><span class="score-cell ${cls}">${v}/${it.max}</span></td>`;
       }).join("")}
-      <td>${period.bonus ?? 0}</td>
-      <td style="font-weight:800;color:${period.exempt ? "var(--gray-ink)" : "var(--ember-dark)"};">${formatTotal(period)}</td>
+      <td>${st.code}</td>
+      <td>${st.employType}</td>
+      <td><span class="aff-chip ${affClass(st.affiliation)}">${st.affiliation}</span></td>
+      <td style="color:var(--muted);font-size:11px;">${computeTenureText(st.hireDate)}</td>
+      <td>${period.evaluator || "-"}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -1308,19 +1436,23 @@ function renderDashboard(){
 
   const bulkRow = document.createElement("div");
   bulkRow.style.cssText = "margin-top:14px;padding-top:14px;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;";
-  const unconfirmedCount = filtered.filter(st => !st.yearData[selectedYear][dashboardPeriod].confirmed).length;
+  // 一括確定の対象は「入力済み・未確定」の人だけ。未入力の人を確定すると0点のままロックされてしまうため除外する
+  const statusOf = st => evalStatus(st, selectedYear, dashboardPeriod);
+  const readyToConfirm = filtered.filter(st => statusOf(st)==="doing");
+  const notEntered = filtered.filter(st => statusOf(st)==="todo");
+  const unconfirmedCount = readyToConfirm.length;
   const bulkInfo = document.createElement("span");
   bulkInfo.style.cssText = "font-size:12px;color:var(--muted);";
-  bulkInfo.textContent = `表示中${filtered.length}名のうち、未確定${unconfirmedCount}名`;
+  bulkInfo.textContent = `表示中${filtered.length}名のうち、入力済み・未確定${readyToConfirm.length}名、未入力${notEntered.length}名`;
   bulkRow.appendChild(bulkInfo);
   if(unconfirmedCount > 0 && isCurrentUserAdmin()){
     const bulkBtn = document.createElement("button");
     bulkBtn.className = "primary";
     bulkBtn.style.background = "var(--charcoal)";
-    bulkBtn.textContent = `表示中の${unconfirmedCount}名を一括確定`;
+    bulkBtn.textContent = `入力済みの${unconfirmedCount}名を一括確定`;
     bulkBtn.onclick = ()=>{
-      showModal(`現在表示中の${filtered.length}名のうち、未確定の${unconfirmedCount}名を${selectedYear}年度${dashboardPeriod}として確定します。よろしいですか?`, ()=>{
-        filtered.forEach(st=>{
+      showModal(`入力済みで未確定の${unconfirmedCount}名を、${selectedYear}年度${dashboardPeriod}として確定します。${notEntered.length ? `\n未入力の${notEntered.length}名は確定されません。` : ""}よろしいですか?`, ()=>{
+        readyToConfirm.forEach(st=>{
           const pd = st.yearData[selectedYear][dashboardPeriod];
           if(!pd.confirmed){
             const before = clonePeriod(pd);
@@ -1343,7 +1475,6 @@ function renderDashboard(){
 /* ---------- ATS評価入力(紙の評価票と同じ表レイアウト・4期間分の履歴を保持) ---------- */
 let entrySelectedId = null;
 let editingStaffId = null; // スタッフマスタでの編集中スタッフID(再描画をまたいで保持する必要があるためトップレベル)
-let openStaffActionMenuId = null; // スマホ表示で「⋮」メニューを開いているスタッフID
 /* 名前で絞り込める検索欄。プルダウンだと人数が多い時に探しづらいための代替。
    input+datalistではなく自前でドロップダウンパネルを描画している(iOS Safariでdatalistの候補が
    ほぼ表示されない/不安定という問題があるため、どの端末でも同じ見た目・動きになるようにした)。 */
@@ -1428,7 +1559,7 @@ function renderEntry(){
   const STATUS_LABEL = {active:"", leave:"(休職)", resigned:"(退職)"};
   const visibleStaff = state.staff.filter(s => s.isEvaluatee && (entryShowInactive || s.status==="active"));
   if(!entrySelectedId || !visibleStaff.some(s=>s.id===entrySelectedId)) entrySelectedId = visibleStaff[0]?.id;
-  pickerRow.appendChild(buildStaffSearchInput(visibleStaff, entrySelectedId, (id)=>{ entrySelectedId = id; render(); }));
+  pickerRow.appendChild(buildStaffSearchInput(visibleStaff, entrySelectedId, (id)=> guardedNavigate(()=>{ entrySelectedId = id; render(); }, ()=> render())));
   const inactiveLabel = document.createElement("label");
   inactiveLabel.style.cssText = "display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);font-weight:700;white-space:nowrap;";
   const inactiveCheck = document.createElement("input");
@@ -1448,6 +1579,18 @@ function renderEntry(){
   const key = snapKey(staffObj.id, selectedYear+entrySelectedPeriod);
   if(!editSnapshots[key]) editSnapshots[key] = clonePeriod(periodData);
   const locked = !!periodData.confirmed;
+  leaveGuard = {
+    save: ()=>{
+      diffAndLog(staffObj, selectedYear, entrySelectedPeriod, editSnapshots[key], periodData);
+      editSnapshots[key] = clonePeriod(periodData);
+      return saveState();
+    },
+    discard: ()=>{
+      const snap = clonePeriod(editSnapshots[key]);
+      Object.keys(periodData).forEach(k=> delete periodData[k]);
+      Object.assign(periodData, snap);
+    },
+  };
 
   // 評価時期ボタン + 前回の評価を反映ボタン(同じ行の右側・年度をまたいでも1月→翌年度4月で繋がる)
   const periodIdx = PERIODS.indexOf(entrySelectedPeriod);
@@ -1455,7 +1598,7 @@ function renderEntry(){
   let prevRef = null;
   if(periodIdx > 0){ prevRef = { year: selectedYear, period: PERIODS[periodIdx-1] }; }
   else if(yearIdx > 0){ prevRef = { year: state.years[yearIdx-1], period: PERIODS[PERIODS.length-1] }; }
-  const periodRow = renderPeriodButtons(entrySelectedPeriod, (p)=>{ entrySelectedPeriod = p; render(); });
+  const periodRow = renderPeriodButtons(entrySelectedPeriod, (p)=> guardedNavigate(()=>{ entrySelectedPeriod = p; render(); }));
   if(prevRef && !locked && staffObj.yearData[prevRef.year]){
     const copyBtn = document.createElement("button");
     const prevLabel = prevRef.year===selectedYear ? prevRef.period : `${prevRef.year}年度${prevRef.period}`;
@@ -1463,7 +1606,7 @@ function renderEntry(){
     copyBtn.style.cssText = "margin-left:auto;background:#fff;border:1px solid var(--ember);color:var(--ember-dark);border-radius:20px;padding:6px 16px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;";
     copyBtn.onclick = ()=>{
       showModal(`${entrySelectedPeriod}分のスコア・加点を、${prevLabel}の内容で上書きします(コメントは反映されません)。よろしいですか?`, ()=>{
-        editingForm = true;
+        markDirty();
         const prev = staffObj.yearData[prevRef.year][prevRef.period];
         periodData.scores = JSON.parse(JSON.stringify(prev.scores));
         periodData.bonus = prev.bonus;
@@ -1499,7 +1642,15 @@ function renderEntry(){
   evaluatorSelect.disabled = locked;
   const evaluatorNames = state.staff.filter(s=>s.isEvaluator && s.id!==staffObj.id).map(s=>s.name); // 対象者本人は自己評価防止のため除外
   evaluatorSelect.innerHTML = `<option value="">未選択</option>` + evaluatorNames.map(name=>`<option value="${name}" ${periodData.evaluator===name?"selected":""}>${name}</option>`).join("");
-  evaluatorSelect.onchange = ()=>{ editingForm = true; periodData.evaluator = evaluatorSelect.value; };
+  // 評価者が未選択なら、評価担当の人を初期値にする(保存した時点で記録される)
+  if(!locked && !periodData.evaluator){
+    const assigned = assignedEvaluatorOf(staffObj);
+    if(assigned && evaluatorNames.includes(assigned.name)){
+      periodData.evaluator = assigned.name;
+      evaluatorSelect.value = assigned.name;
+    }
+  }
+  evaluatorSelect.onchange = ()=>{ markDirty(); periodData.evaluator = evaluatorSelect.value; };
   evaluatorBox.appendChild(evaluatorSelect);
   evaluatorRow.appendChild(evaluatorBox);
   if(locked){
@@ -1534,7 +1685,7 @@ function renderEntry(){
   exemptCheck.checked = !!periodData.exempt;
   exemptCheck.disabled = locked;
   exemptCheck.onchange = ()=>{
-    editingForm = true;
+    markDirty();
     periodData.exempt = exemptCheck.checked;
     render();
   };
@@ -1548,56 +1699,13 @@ function renderEntry(){
     card.appendChild(exemptBanner);
   }
 
-  const tableWrap = document.createElement("div");
-  tableWrap.className = "paper-table-wrap";
-  if(locked) tableWrap.style.opacity = "0.6";
-  const table = document.createElement("table");
-  table.className = "paper-table";
-  const tbody = document.createElement("tbody");
-
-  CATEGORIES.forEach(cat=>{
-    cat.items.forEach((it, idx)=>{
-      const tr = document.createElement("tr");
-      if(idx===0){
-        const catTd = document.createElement("td");
-        catTd.className = "cat-col " + CAT_CLASS[cat.id];
-        catTd.rowSpan = cat.items.length;
-        catTd.textContent = cat.label;
-        tr.appendChild(catTd);
-      }
-      const nameTd = document.createElement("td");
-      nameTd.className = "item-col";
-      nameTd.textContent = it.name;
-      tr.appendChild(nameTd);
-
-      const optsTd = document.createElement("td");
-      optsTd.className = "opts-col";
-      const chipGroup = document.createElement("div");
-      chipGroup.className = "chip-group";
-      const current = periodData.scores[it.name] ?? 0;
-      for(let v=0; v<=it.max; v++){
-        const chip = document.createElement("button");
-        chip.className = "chip-btn" + (v===current ? " selected" : "");
-        chip.textContent = v;
-        chip.disabled = locked;
-        // render()を呼ぶと画面全体が再構築され、横スクロール位置が先頭に戻ってしまうため、
-        // 値の更新とこの行の見た目・合計点数表示だけをその場で更新する。
-        chip.onclick = ()=>{
-          editingForm = true;
-          periodData.scores[it.name] = v;
-          chipGroup.querySelectorAll(".chip-btn").forEach(b=> b.classList.remove("selected"));
-          chip.classList.add("selected");
-          totalDisplay.textContent = `合計点数: ${totalScore(periodData)}点 (★${starCount(periodData.scores)} + 加点${periodData.bonus ?? 0})`;
-        };
-        chipGroup.appendChild(chip);
-      }
-      optsTd.appendChild(chipGroup);
-      tr.appendChild(optsTd);
-      tbody.appendChild(tr);
-    });
+  const tableWrap = buildScoreChipTable(periodData.scores, {
+    locked,
+    onChange: ()=>{
+      markDirty();
+      totalDisplay.textContent = `合計 ${totalScore(periodData)}点(★${starCount(periodData.scores)}+加点${periodData.bonus ?? 0})`;
+    },
   });
-  table.appendChild(tbody);
-  tableWrap.appendChild(table);
   card.appendChild(tableWrap);
 
   const bonusRow = document.createElement("div");
@@ -1610,23 +1718,23 @@ function renderEntry(){
   bonusChips.className = "chip-group";
   const totalDisplay = document.createElement("div");
   totalDisplay.style.cssText = "margin-left:auto;font-weight:800;font-size:15px;color:var(--ember-dark);";
-  totalDisplay.textContent = `合計点数: ${totalScore(periodData)}点 (★${starCount(periodData.scores)} + 加点${periodData.bonus ?? 0})`;
+  totalDisplay.textContent = `合計 ${totalScore(periodData)}点(★${starCount(periodData.scores)}+加点${periodData.bonus ?? 0})`;
   [0,1,2,3].forEach(v=>{
     const chip = document.createElement("button");
     chip.className = "chip-btn" + (v===(periodData.bonus ?? 0) ? " selected" : "");
     chip.textContent = v;
     chip.disabled = locked;
     chip.onclick = ()=>{
-      editingForm = true;
+      markDirty();
       periodData.bonus = v;
       bonusChips.querySelectorAll(".chip-btn").forEach(b=> b.classList.remove("selected"));
       chip.classList.add("selected");
-      totalDisplay.textContent = `合計点数: ${totalScore(periodData)}点 (★${starCount(periodData.scores)} + 加点${periodData.bonus ?? 0})`;
+      totalDisplay.textContent = `合計 ${totalScore(periodData)}点(★${starCount(periodData.scores)}+加点${periodData.bonus ?? 0})`;
     };
     bonusChips.appendChild(chip);
   });
   bonusRow.appendChild(bonusChips);
-  bonusRow.appendChild(totalDisplay);
+  if(locked) bonusRow.appendChild(totalDisplay); // 編集できる時は下の固定バーに表示
   card.appendChild(bonusRow);
 
   const commentBlock = document.createElement("div");
@@ -1638,7 +1746,7 @@ function renderEntry(){
   commentArea.placeholder = "所感・特記事項など";
   commentArea.value = periodData.comment || "";
   commentArea.disabled = locked;
-  commentArea.oninput = ()=>{ editingForm = true; periodData.comment = commentArea.value; };
+  commentArea.oninput = ()=>{ markDirty(); periodData.comment = commentArea.value; };
   commentBlock.appendChild(commentArea);
   card.appendChild(commentBlock);
 
@@ -1654,29 +1762,34 @@ function renderEntry(){
   goalArea.placeholder = "例:レジを一人で回せるようになる";
   goalArea.value = periodData.evaluatorGoal || "";
   goalArea.disabled = locked;
-  goalArea.oninput = ()=>{ editingForm = true; periodData.evaluatorGoal = goalArea.value; };
+  goalArea.oninput = ()=>{ markDirty(); periodData.evaluatorGoal = goalArea.value; };
   goalBlock.appendChild(goalArea);
   card.appendChild(goalBlock);
 
   if(!locked){
     const saveRow = document.createElement("div");
-    saveRow.style.cssText = "margin-top:18px;display:flex;justify-content:flex-end;gap:10px;";
+    saveRow.className = "sticky-actions";
+    totalDisplay.className = "total";
+    totalDisplay.style.cssText = "";
+    saveRow.appendChild(totalDisplay);
+    const btns = document.createElement("div");
+    btns.className = "btns";
     const saveBtn = document.createElement("button");
     saveBtn.className = "primary";
     saveBtn.style.background = "var(--charcoal)";
-    saveBtn.textContent = `${entrySelectedPeriod}分を保存する`;
+    saveBtn.textContent = "保存";
     saveBtn.onclick = ()=>{
-      editingForm = false;
+      clearDirty();
       diffAndLog(staffObj, selectedYear, entrySelectedPeriod, editSnapshots[key], periodData);
       editSnapshots[key] = clonePeriod(periodData);
       saveState();
     };
     const confirmBtn = document.createElement("button");
     confirmBtn.className = "primary";
-    confirmBtn.textContent = `${entrySelectedPeriod}分を確定する`;
+    confirmBtn.textContent = "確定";
     confirmBtn.onclick = ()=>{
       showModal(`${staffObj.name}さんの${selectedYear}年度 ${entrySelectedPeriod}評価を確定します。確定後は「編集」ボタンを押さないと内容を変更できなくなります。`, ()=>{
-        editingForm = false;
+        clearDirty();
         const before = clonePeriod(periodData);
         periodData.confirmed = true;
         diffAndLog(staffObj, selectedYear, entrySelectedPeriod, before, periodData);
@@ -1688,25 +1801,34 @@ function renderEntry(){
     const saveNextBtn = document.createElement("button");
     saveNextBtn.className = "primary";
     saveNextBtn.style.background = "var(--muted)";
-    saveNextBtn.textContent = "保存して次のスタッフへ";
+    saveNextBtn.textContent = "保存して次へ";
     saveNextBtn.onclick = ()=>{
-      editingForm = false;
+      clearDirty();
       diffAndLog(staffObj, selectedYear, entrySelectedPeriod, editSnapshots[key], periodData);
       editSnapshots[key] = clonePeriod(periodData);
       saveState();
-      const idx = visibleStaff.findIndex(s=>s.id===entrySelectedId);
-      if(idx !== -1 && idx < visibleStaff.length-1){
-        entrySelectedId = visibleStaff[idx+1].id;
+      // 自分の担当者を評価中なら、担当のうち次の未確定の人へ。それ以外は一覧の次の人へ
+      const me = currentStaffObj();
+      const mine = me ? assigneesOf(me.id) : [];
+      const myIdx = mine.findIndex(s=>s.id===entrySelectedId);
+      const nextMine = myIdx===-1 ? null
+        : [...mine.slice(myIdx+1), ...mine.slice(0,myIdx)].find(s=>["todo","doing"].includes(evalStatus(s, selectedYear, entrySelectedPeriod)));
+      if(nextMine){
+        entrySelectedId = nextMine.id;
+      } else {
+        const idx = visibleStaff.findIndex(s=>s.id===entrySelectedId);
+        if(idx !== -1 && idx < visibleStaff.length-1) entrySelectedId = visibleStaff[idx+1].id;
       }
       render();
     };
-    saveRow.appendChild(saveNextBtn);
-    saveRow.appendChild(saveBtn);
+    btns.appendChild(saveNextBtn);
+    btns.appendChild(saveBtn);
     // 確定は管理者だけに限定する(編集ロック解除も管理者限定にしてあるのと同じ考え方)。
     // 評価者は保存はできるが、確定は管理者に任せる。
     if(isCurrentUserAdmin()){
-      saveRow.appendChild(confirmBtn);
+      btns.appendChild(confirmBtn);
     }
+    saveRow.appendChild(btns);
     card.appendChild(saveRow);
   }
 
@@ -1716,15 +1838,50 @@ function renderEntry(){
 
 /* ============================== ATS評価-個人(紙の評価票と同じ形で、4期間を横並びに表示。閲覧専用) ============================== */
 /* ---------- 個人タブ用:カテゴリ別達成率・店舗平均・SVGチャート ---------- */
+/* 評価入力・自己評価で共通の点数表(チップ)。
+   チップ押下時にrender()を呼ぶと画面全体が再構築され横スクロール位置が戻るため、
+   値の更新とその行の見た目だけをその場で切り替え、追加処理はonChangeに任せる。 */
+function buildScoreChipTable(scores, {locked=false, onChange=()=>{}} = {}){
+  const list = document.createElement("div");
+  list.className = "score-list";
+  if(locked) list.style.opacity = "0.6";
+  CATEGORIES.forEach(cat=>{
+    const head = document.createElement("div");
+    head.className = "score-cat " + CAT_CLASS[cat.id];
+    head.textContent = cat.label;
+    list.appendChild(head);
+    cat.items.forEach(it=>{
+      const row = document.createElement("div");
+      row.className = "score-item";
+      const nm = document.createElement("div");
+      nm.className = "nm";
+      nm.textContent = it.name;
+      row.appendChild(nm);
+      const chipGroup = document.createElement("div");
+      chipGroup.className = "chip-group";
+      const current = scores[it.name] ?? 0;
+      for(let v=0; v<=it.max; v++){
+        const chip = document.createElement("button");
+        chip.className = "chip-btn" + (v===current ? " selected" : "");
+        chip.textContent = v;
+        chip.disabled = locked;
+        chip.onclick = ()=>{
+          scores[it.name] = v;
+          chipGroup.querySelectorAll(".chip-btn").forEach(b=> b.classList.remove("selected"));
+          chip.classList.add("selected");
+          onChange();
+        };
+        chipGroup.appendChild(chip);
+      }
+      row.appendChild(chipGroup);
+      list.appendChild(row);
+    });
+  });
+  return list;
+}
 function categoryPct(scores, cat){
   const vals = cat.items.map(it => (scores[it.name] ?? 0) / it.max);
   return Math.round((vals.reduce((a,b)=>a+b,0) / vals.length) * 100);
-}
-function storeCategoryAvgPct(year, period, cat){
-  const activeStaff = state.staff.filter(s=>s.isEvaluatee && s.status==="active" && s.yearData[year]);
-  if(activeStaff.length===0) return 0;
-  const sum = activeStaff.reduce((acc,s)=> acc + categoryPct(s.yearData[year][period].scores, cat), 0);
-  return Math.round(sum / activeStaff.length);
 }
 const OPERATION_ITEMS = CATEGORIES.slice(0,3).flatMap(c=>c.items.map(it=>({...it, categoryId:c.id}))); // ①キッチン②ホール③特殊技能=15項目
 /* ホール項目はホール+両方の人だけ、キッチン項目はキッチン+両方の人だけで平均を取る。
@@ -2256,7 +2413,7 @@ const ANALYSIS_MODULES = [
   },
   {
     id: "busFactor",
-    label: "⭐️保持者数(太字:満点)",
+    label: "★保持者数(太字:満点)",
     render(){
       const container = document.createElement("div");
 
@@ -2905,7 +3062,7 @@ function renderStaffAdmin(){
     state.years.forEach(y => { yearData[y] = emptyPeriods(); });
     state.staff.push({
       id: "s"+Date.now(), code, name, employType, affiliation, hireDate, status:"active", yearData,
-      isEvaluator:false, isEvaluatee:true, isAdmin:false, hasLogin:false, growthNotes:[],
+      isEvaluator:false, isEvaluatee:employType!=="社員", isAdmin:false, hasLogin:false, growthNotes:[], assignedEvaluatorId:"",
     });
     saveState();
     render();
@@ -2944,13 +3101,32 @@ const STATUS_META = {
           ${["ホール","キッチン","両方"].map(a=>`<option ${editingStaff.affiliation===a?"selected":""}>${a}</option>`).join("")}
         </select></div>
       </div>
-      <div><label>入社日</label><input class="se-hire" type="date" value="${editingStaff.hireDate||""}"></div>
-      <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <div class="row2">
+        <div style="flex:1;"><label>入社日</label><input class="se-hire" type="date" value="${editingStaff.hireDate||""}"></div>
+        <div style="flex:1;"><label>状態</label><select class="se-status">
+          <option value="active" ${editingStaff.status==="active"?"selected":""}>在籍</option>
+          <option value="leave" ${editingStaff.status==="leave"?"selected":""}>休職</option>
+          ${editingStaff.status==="resigned" ? `<option value="resigned" selected>退職</option>` : ""}
+        </select></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <button class="btn-danger se-delete">このスタッフを削除</button>
+        <span style="flex:1;"></span>
         <button class="ghost small se-cancel">キャンセル</button>
         <button class="primary se-save">保存</button>
       </div>
     `;
     form.querySelector(".se-cancel").onclick = ()=>{ editingStaffId = null; render(); };
+    form.querySelector(".se-delete").onclick = ()=>{
+      if(editingStaff.name === currentPersonName){ showToast("ログイン中の自分自身は削除できません"); return; }
+      showModal(`${editingStaff.name}さんを削除します。過去の評価データ・一言メモも一緒に消え、元に戻せません。よろしいですか?\n(ログイン用のアカウントはFirebase側に残ります)`, ()=>{
+        logGenericChange(editingStaff.name, "スタッフ", "登録あり", "削除");
+        state.staff = state.staff.filter(s=>s.id!==editingStaff.id);
+        editingStaffId = null;
+        saveState();
+        render();
+      }, {confirmLabel:"削除する"});
+    };
     form.querySelector(".se-save").onclick = ()=>{
       const newName = form.querySelector(".se-name").value.trim();
       const newCode = form.querySelector(".se-code").value.trim();
@@ -2963,6 +3139,12 @@ const STATUS_META = {
       editingStaff.employType = form.querySelector(".se-type").value;
       editingStaff.affiliation = form.querySelector(".se-aff").value;
       editingStaff.hireDate = form.querySelector(".se-hire").value || null;
+      editingStaff.isEvaluatee = editingStaff.employType !== "社員";
+      const newStatus = form.querySelector(".se-status").value;
+      if(newStatus !== editingStaff.status){
+        logGenericChange(editingStaff.name, "状態", STATUS_META[editingStaff.status]?.label || editingStaff.status, STATUS_META[newStatus]?.label || newStatus);
+        editingStaff.status = newStatus;
+      }
       editingStaffId = null;
       saveState();
       render();
@@ -2974,129 +3156,106 @@ const STATUS_META = {
   const tableWrap = document.createElement("div");
   tableWrap.className = "table-wrap";
   const table = document.createElement("table");
-  table.innerHTML = `<thead><tr><th>社員CD</th><th class="name-col">氏名</th><th>雇用区分</th><th>所属</th><th>入社日</th><th>状態</th><th>ログイン</th><th style="text-align:right;">操作</th></tr></thead>`;
+  table.innerHTML = `<thead><tr><th class="name-col sm-sticky">氏名</th><th>権限</th><th>評価担当</th><th>状態</th><th>雇用区分</th><th>所属</th><th>社員CD</th><th>入社日</th><th>ログイン</th><th style="text-align:right;">操作</th></tr></thead>`;
   const tbody = document.createElement("tbody");
+  const activeEvaluators = state.staff.filter(s=>s.isEvaluator && s.status==="active");
+  const pillStyle = "background:#fff;border:1px solid var(--line);color:var(--muted);border-radius:20px;padding:5px 14px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;";
   [...state.staff].sort((a,b)=> Number(a.code)-Number(b.code)).forEach(st=>{
     const tr = document.createElement("tr");
     const meta = STATUS_META[st.status] || STATUS_META.active;
-    tr.innerHTML = `
-      <td>${st.code}</td>
-      <td class="name-col" style="${st.hasLogin ? "" : "color:var(--muted);"}">${st.name}</td>
+    tr.innerHTML = `<td class="name-col sm-sticky" style="${st.hasLogin ? "" : "color:var(--muted);"}">${st.name}</td>`;
+    // 権限:押すとON/OFFが切り替わるラベル
+    const roleTd = document.createElement("td");
+    const roleWrap = document.createElement("div");
+    roleWrap.style.cssText = "display:inline-flex;gap:5px;";
+    [{key:"isAdmin", label:"管理者", field:"管理者権限"}, {key:"isEvaluator", label:"評価者", field:"評価者"}].forEach(r=>{
+      const b = document.createElement("button");
+      b.className = "role-chip" + (st[r.key] ? " on" : "");
+      b.textContent = r.label;
+      b.title = st[r.key] ? `${r.label}から外す` : `${r.label}にする`;
+      b.onclick = ()=>{
+        const cur = state.staff.find(s=>s.id===st.id);
+        if(!cur) return;
+        if(r.key==="isAdmin" && cur[r.key] && cur.name===currentPersonName){ showToast("自分自身の管理者権限は外せません"); return; }
+        cur[r.key] = !cur[r.key];
+        logGenericChange(cur.name, r.field, cur[r.key] ? "なし" : "あり", cur[r.key] ? "あり" : "なし");
+        saveState();
+        render();
+      };
+      roleWrap.appendChild(b);
+    });
+    roleTd.appendChild(roleWrap);
+    tr.appendChild(roleTd);
+
+    // 評価担当:評価対象の人だけ選べる(社員は対象外)
+    const assignTd = document.createElement("td");
+    if(st.isEvaluatee){
+      const sel = document.createElement("select");
+      sel.className = "assign-select";
+      const current = assignedEvaluatorOf(st);
+      sel.innerHTML = `<option value="">未割り当て</option>` + activeEvaluators.filter(ev=>ev.id!==st.id).map(ev=>`<option value="${ev.id}">${ev.name}</option>`).join("");
+      sel.value = current ? current.id : "";
+      if(!current) sel.classList.add("unset");
+      sel.onchange = ()=>{
+        const cur = state.staff.find(s=>s.id===st.id);
+        if(!cur) return;
+        const before = assignedEvaluatorOf(cur)?.name || "(未割り当て)";
+        cur.assignedEvaluatorId = sel.value;
+        logGenericChange(cur.name, "評価担当", before, assignedEvaluatorOf(cur)?.name || "(未割り当て)");
+        saveState();
+        render();
+      };
+      assignTd.appendChild(sel);
+    } else {
+      assignTd.innerHTML = `<span style="color:var(--gray-ink);font-size:11.5px;">評価対象外</span>`;
+    }
+    tr.appendChild(assignTd);
+
+    tr.insertAdjacentHTML("beforeend", `
+      <td><span class="aff-chip" style="${meta.style}">${meta.label}</span></td>
       <td>${st.employType}</td>
       <td>${st.affiliation}</td>
+      <td>${st.code}</td>
       <td style="color:var(--muted);font-size:11px;">${st.hireDate ?? "-"}</td>
-      <td><span class="aff-chip" style="${meta.style}">${meta.label}</span></td>
-      <td>${st.hasLogin
-        ? `<span class="aff-chip" style="background:var(--green-bg);color:var(--green);">設定済み</span>`
-        : `<span class="aff-chip" style="background:var(--gray-bg);color:var(--gray-ink);">未設定</span>`}</td>
-    `;
+    `);
+    const loginTd = document.createElement("td");
+    loginTd.innerHTML = st.hasLogin
+      ? `<span class="aff-chip" style="background:var(--green-bg);color:var(--green);">設定済み</span>`
+      : `<span class="aff-chip" style="background:var(--gray-bg);color:var(--gray-ink);">未設定</span>`;
+    tr.appendChild(loginTd);
+
     const actionTd = document.createElement("td");
-    actionTd.style.cssText = "text-align:right;position:relative;white-space:nowrap;";
+    actionTd.style.cssText = "text-align:right;white-space:nowrap;";
     const actionGroup = document.createElement("div");
-    actionGroup.className = "btn-group";
-    actionGroup.style.cssText = "justify-content:flex-end;flex-wrap:nowrap;display:inline-flex;";
-    const pillStyle = "background:#fff;border:1px solid var(--line);color:var(--muted);border-radius:20px;padding:5px 14px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;";
+    actionGroup.style.cssText = "display:inline-flex;gap:6px;justify-content:flex-end;";
     const editStaffBtn = document.createElement("button");
     editStaffBtn.textContent = "編集";
     editStaffBtn.style.cssText = pillStyle;
-    editStaffBtn.onclick = ()=>{ editingStaffId = st.id; render(); };
+    editStaffBtn.onclick = ()=>{ editingStaffId = st.id; render(); window.scrollTo?.(0,0); };
     actionGroup.appendChild(editStaffBtn);
-
-    // 編集以外の操作(休職/退職・ログイン設定・設定済みにする)は、内容が同じでも
-    // デスクトップは並べて表示・スマホでは「⋮」1つにまとめて表示を変える。
-    const extraActions = [];
-    [{key:"leave", label:"休職"}, {key:"resigned", label:"退職"}].forEach(opt=>{
-      const isOn = st.status === opt.key;
-      extraActions.push({
-        label: isOn ? "在籍に戻す" : opt.label,
-        active: isOn,
-        run: ()=>{
-          const nextStatus = isOn ? "active" : opt.key;
-          const msg = nextStatus==="active"
-            ? `${st.name}さんを在籍に戻します。`
-            : nextStatus==="resigned"
-            ? `${st.name}さんを退職にします。過去の評価データは残りますが、ATS評価-全体・評価入力の対象一覧からは初期状態で除外されます。`
-            : `${st.name}さんを休職にします。ATS評価-全体・評価入力の対象一覧からは初期状態で除外されます(データは残ります)。`;
-          showModal(msg, ()=>{
-            st.status = nextStatus;
-            saveState();
-            render();
-          }, {confirmLabel: nextStatus==="active" ? "在籍に戻す" : opt.label + "にする"});
+    const loginBtn = document.createElement("button");
+    loginBtn.textContent = st.hasLogin ? "ログイン再設定" : "ログイン設定";
+    loginBtn.style.cssText = pillStyle;
+    loginBtn.onclick = ()=>{
+      showInputModal(
+        `${st.name}さん(社員CD: ${st.code})のログインパスワードを設定します。\n6文字以上で入力してください。${st.hasLogin ? "\n※既に設定済みのようです。パスワードの再設定(リセット)は現在の仕組みではできません。" : ""}`,
+        async (password, close)=>{
+          if(!password || password.length < 6){ throw new Error("パスワードは6文字以上にしてください(Firebaseの制限です)。"); }
+          try{
+            await createLoginAccount(st.code, password);
+          }catch(e){
+            throw new Error(e.code==="auth/email-already-in-use" ? "このスタッフのログインは既に設定済みです。" : ("作成に失敗しました:" + (e.message||"")));
+          }
+          st.hasLogin = true;
+          await saveState();
+          close();
+          showToast(`${st.name}さんのログインを設定しました`);
+          render();
         },
-      });
-    });
-    extraActions.push({
-      label: st.hasLogin ? "ログイン再設定" : "ログイン設定",
-      run: ()=>{
-        showInputModal(
-          `${st.name}さん(社員CD: ${st.code})のログインパスワードを設定します。\n6文字以上で入力してください。${st.hasLogin ? "\n※既に設定済みのようです。パスワードの再設定(リセット)は現在の仕組みではできません。" : ""}`,
-          async (password, close)=>{
-            if(!password || password.length < 6){ throw new Error("パスワードは6文字以上にしてください(Firebaseの制限です)。"); }
-            try{
-              await createLoginAccount(st.code, password);
-            }catch(e){
-              throw new Error(e.code==="auth/email-already-in-use" ? "このスタッフのログインは既に設定済みです。" : ("作成に失敗しました:" + (e.message||"")));
-            }
-            st.hasLogin = true;
-            await saveState();
-            close();
-            showToast(`${st.name}さんのログインを設定しました`);
-            render();
-          },
-          {inputType:"password", placeholder:"新しいパスワード", confirmLabel:"設定する"}
-        );
-      },
-    });
-    if(!st.hasLogin){
-      extraActions.push({
-        label: "設定済みにする",
-        title: "以前から実際にはログインアカウントがある場合、この記録だけを直します",
-        run: ()=>{
-          showModal(
-            `${st.name}さんは、以前から実際にはログインアカウントを作成済みですか?\nこの操作はアプリ側の表示だけを直すもので、新しくアカウントを作るわけではありません。`,
-            ()=>{
-              st.hasLogin = true;
-              saveState();
-              render();
-            },
-            {confirmLabel:"設定済みにする"}
-          );
-        },
-      });
-    }
-
-    if(displayMode === "mobile"){
-      const moreBtn = document.createElement("button");
-      moreBtn.textContent = "⋮";
-      moreBtn.style.cssText = pillStyle + "font-size:15px;font-weight:900;padding:5px 12px;";
-      moreBtn.onclick = ()=>{ openStaffActionMenuId = (openStaffActionMenuId===st.id ? null : st.id); render(); };
-      actionGroup.appendChild(moreBtn);
-
-      if(openStaffActionMenuId === st.id){
-        const menu = document.createElement("div");
-        menu.style.cssText = "position:absolute;right:0;top:100%;margin-top:4px;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.16);z-index:20;min-width:170px;overflow:hidden;text-align:left;";
-        extraActions.forEach(a=>{
-          const item = document.createElement("button");
-          item.textContent = a.label;
-          if(a.title) item.title = a.title;
-          item.style.cssText = "display:block;width:100%;text-align:left;background:#fff;border:none;border-bottom:1px solid var(--line);color:" + (a.active ? "var(--ember-dark)" : "var(--ink)") + ";padding:10px 14px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;";
-          item.onclick = ()=>{ openStaffActionMenuId = null; a.run(); };
-          menu.appendChild(item);
-        });
-        if(menu.lastChild) menu.lastChild.style.borderBottom = "none";
-        actionTd.appendChild(menu);
-      }
-    } else {
-      extraActions.forEach(a=>{
-        const btn = document.createElement("button");
-        btn.textContent = a.label;
-        if(a.title) btn.title = a.title;
-        btn.className = a.active ? "active" : "";
-        btn.style.cssText = a.active ? "" : pillStyle;
-        btn.onclick = a.run;
-        actionGroup.appendChild(btn);
-      });
-    }
+        {inputType:"password", placeholder:"新しいパスワード", confirmLabel:"設定する"}
+      );
+    };
+    actionGroup.appendChild(loginBtn);
     actionTd.appendChild(actionGroup);
     tr.appendChild(actionTd);
     tbody.appendChild(tr);
@@ -3106,176 +3265,194 @@ const STATUS_META = {
   listCard.appendChild(tableWrap);
   wrap.appendChild(listCard);
 
-  // 評価者一覧
-  const evalCard = document.createElement("div");
-  evalCard.className = "card";
-  evalCard.innerHTML = `<div style="font-weight:800;font-size:15px;margin-bottom:4px;">評価者一覧</div><div style="font-size:12px;color:var(--muted);margin-bottom:14px;">ここで選ばれた人が、ATS評価入力画面の「評価者」プルダウンに表示されます。</div>`;
-  const currentEvaluators = state.staff.filter(s=>s.isEvaluator);
-  const chipsWrap = document.createElement("div");
-  chipsWrap.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;";
-  if(currentEvaluators.length===0){
-    const empty = document.createElement("div");
-    empty.style.cssText = "color:var(--muted);font-size:13px;";
-    empty.textContent = "評価者が1人も選ばれていません。下のプルダウンから追加してください。";
-    chipsWrap.appendChild(empty);
-  }
-  currentEvaluators.forEach(st=>{
-    const chip = document.createElement("span");
-    chip.style.cssText = "display:inline-flex;align-items:center;gap:6px;background:var(--amber-bg);color:var(--amber);border-radius:20px;padding:5px 8px 5px 14px;font-size:12.5px;font-weight:700;";
-    chip.textContent = st.name;
-    const removeBtn = document.createElement("button");
-    removeBtn.textContent = "✕";
-    removeBtn.style.cssText = "background:none;border:none;color:inherit;cursor:pointer;font-size:12px;padding:2px 4px;font-family:inherit;";
-    removeBtn.onclick = ()=>{
-      st.isEvaluator = false;
-      saveState();
-      render();
-    };
-    chip.appendChild(removeBtn);
-    chipsWrap.appendChild(chip);
-  });
-  evalCard.appendChild(chipsWrap);
-
-  const addRow = document.createElement("div");
-  addRow.style.cssText = "display:flex;gap:10px;align-items:center;";
-  const addSelect = document.createElement("select");
-  addSelect.style.maxWidth = "260px";
-  const candidates = state.staff.filter(s=>!s.isEvaluator && s.status==="active");
-  addSelect.innerHTML = candidates.length
-    ? candidates.map(s=>`<option value="${s.id}">${s.name}</option>`).join("")
-    : `<option value="">(追加できる在籍スタッフがいません)</option>`;
-  addRow.appendChild(addSelect);
-  const addEvalBtn = document.createElement("button");
-  addEvalBtn.className = "ghost small";
-  addEvalBtn.textContent = "評価者に追加";
-  addEvalBtn.style.cssText = "background:transparent;color:var(--ember-dark);border:1px solid var(--ember);border-radius:8px;padding:8px 16px;font-weight:700;font-size:12.5px;cursor:pointer;font-family:inherit;";
-  addEvalBtn.onclick = ()=>{
-    const target = state.staff.find(s=>s.id===addSelect.value);
-    if(!target) return;
-    target.isEvaluator = true;
-    saveState();
-    render();
-  };
-  addRow.appendChild(addEvalBtn);
-  evalCard.appendChild(addRow);
-  wrap.appendChild(evalCard);
-
-  // 被評価者から除外(社員など、別の評価指標を使う人をこの評価から外す)
-  const exCard = document.createElement("div");
-  exCard.className = "card";
-  exCard.innerHTML = `<div style="font-weight:800;font-size:15px;margin-bottom:4px;">被評価者から除外</div><div style="font-size:12px;color:var(--muted);margin-bottom:14px;">ここに入れた人は、ATS評価-全体・評価入力・個人・データ分析の対象一覧から外れます(評価者としては引き続き選べます。ログインも可能です)。</div>`;
-  const currentExcluded = state.staff.filter(s=>!s.isEvaluatee);
-  const exChipsWrap = document.createElement("div");
-  exChipsWrap.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;";
-  if(currentExcluded.length===0){
-    const empty = document.createElement("div");
-    empty.style.cssText = "color:var(--muted);font-size:13px;";
-    empty.textContent = "除外されている人はいません。";
-    exChipsWrap.appendChild(empty);
-  }
-  currentExcluded.forEach(st=>{
-    const chip = document.createElement("span");
-    chip.style.cssText = "display:inline-flex;align-items:center;gap:6px;background:var(--gray-bg);color:var(--gray-ink);border-radius:20px;padding:5px 8px 5px 14px;font-size:12.5px;font-weight:700;";
-    chip.textContent = st.name;
-    const removeBtn = document.createElement("button");
-    removeBtn.textContent = "✕";
-    removeBtn.style.cssText = "background:none;border:none;color:inherit;cursor:pointer;font-size:12px;padding:2px 4px;font-family:inherit;";
-    removeBtn.title = "被評価者に戻す";
-    removeBtn.onclick = ()=>{
-      st.isEvaluatee = true;
-      saveState();
-      render();
-    };
-    chip.appendChild(removeBtn);
-    exChipsWrap.appendChild(chip);
-  });
-  exCard.appendChild(exChipsWrap);
-
-  const exAddRow = document.createElement("div");
-  exAddRow.style.cssText = "display:flex;gap:10px;align-items:center;";
-  const exAddSelect = document.createElement("select");
-  exAddSelect.style.maxWidth = "260px";
-  const exCandidates = state.staff.filter(s=>s.isEvaluatee && s.status==="active");
-  exAddSelect.innerHTML = exCandidates.length
-    ? exCandidates.map(s=>`<option value="${s.id}">${s.name}</option>`).join("")
-    : `<option value="">(対象にできる在籍スタッフがいません)</option>`;
-  exAddRow.appendChild(exAddSelect);
-  const exAddBtn = document.createElement("button");
-  exAddBtn.className = "ghost small";
-  exAddBtn.textContent = "被評価者から除外する";
-  exAddBtn.style.cssText = "background:transparent;color:var(--ember-dark);border:1px solid var(--ember);border-radius:8px;padding:8px 16px;font-weight:700;font-size:12.5px;cursor:pointer;font-family:inherit;";
-  exAddBtn.onclick = ()=>{
-    const target = state.staff.find(s=>s.id===exAddSelect.value);
-    if(!target) return;
-    target.isEvaluatee = false;
-    saveState();
-    render();
-  };
-  exAddRow.appendChild(exAddBtn);
-  exCard.appendChild(exAddRow);
-  wrap.appendChild(exCard);
-
-  // 管理者一覧(スタッフマスタ・変更履歴削除・シフト挿入/削除・年度移行などができる人)
-  const adminCard = document.createElement("div");
-  adminCard.className = "card";
-  adminCard.innerHTML = `<div style="font-weight:800;font-size:15px;margin-bottom:4px;">管理者一覧</div><div style="font-size:12px;color:var(--muted);margin-bottom:14px;">ここに入れた人は、スタッフマスタの編集・変更履歴の削除・シフトの挿入と削除・年度移行ができます。まだ画面上での制御のみで、サーバー側では強制していません。</div>`;
-  const currentAdmins = state.staff.filter(s=>s.isAdmin);
-  const adminChipsWrap = document.createElement("div");
-  adminChipsWrap.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;";
-  if(currentAdmins.length===0){
-    const empty = document.createElement("div");
-    empty.style.cssText = "color:var(--muted);font-size:13px;";
-    empty.textContent = "管理者が設定されていません。";
-    adminChipsWrap.appendChild(empty);
-  }
-  currentAdmins.forEach(st=>{
-    const chip = document.createElement("span");
-    chip.style.cssText = "display:inline-flex;align-items:center;gap:6px;background:var(--amber-bg);color:var(--amber);border-radius:20px;padding:5px 8px 5px 14px;font-size:12.5px;font-weight:700;";
-    chip.textContent = st.name;
-    const removeBtn = document.createElement("button");
-    removeBtn.textContent = "✕";
-    removeBtn.style.cssText = "background:none;border:none;color:inherit;cursor:pointer;font-size:12px;padding:2px 4px;font-family:inherit;";
-    removeBtn.title = "管理者から外す";
-    removeBtn.onclick = ()=>{
-      st.isAdmin = false;
-      logGenericChange(st.name, "管理者権限", "あり", "なし");
-      saveState();
-      render();
-    };
-    chip.appendChild(removeBtn);
-    adminChipsWrap.appendChild(chip);
-  });
-  adminCard.appendChild(adminChipsWrap);
-
-  const adminAddRow = document.createElement("div");
-  adminAddRow.style.cssText = "display:flex;gap:10px;align-items:center;";
-  const adminAddSelect = document.createElement("select");
-  adminAddSelect.style.maxWidth = "260px";
-  const adminCandidates = state.staff.filter(s=>!s.isAdmin);
-  adminAddSelect.innerHTML = adminCandidates.length
-    ? adminCandidates.map(s=>`<option value="${s.id}">${s.name}</option>`).join("")
-    : `<option value="">(候補がいません)</option>`;
-  adminAddRow.appendChild(adminAddSelect);
-  const adminAddBtn = document.createElement("button");
-  adminAddBtn.className = "ghost small";
-  adminAddBtn.textContent = "管理者に追加する";
-  adminAddBtn.style.cssText = "background:transparent;color:var(--ember-dark);border:1px solid var(--ember);border-radius:8px;padding:8px 16px;font-weight:700;font-size:12.5px;cursor:pointer;font-family:inherit;";
-  adminAddBtn.onclick = ()=>{
-    const target = state.staff.find(s=>s.id===adminAddSelect.value);
-    if(!target) return;
-    target.isAdmin = true;
-    logGenericChange(target.name, "管理者権限", "なし", "あり");
-    saveState();
-    render();
-  };
-  adminAddRow.appendChild(adminAddBtn);
-  adminCard.appendChild(adminAddRow);
-  wrap.appendChild(adminCard);
 
   return wrap;
 }
 
+/* ============================== ホーム画面 ============================== */
+function menuGrid(items){
+  const grid = document.createElement("div");
+  grid.className = "menu-grid";
+  items.forEach(it=>{
+    const b = document.createElement("button");
+    b.className = "menu-tile";
+    b.innerHTML = `<span class="t">${it.label}</span><span class="d">${it.desc}</span>`;
+    b.onclick = ()=> guardedNavigate(()=>{ editingForm = false; activeTab = it.id; render(); });
+    grid.appendChild(b);
+  });
+  return grid;
+}
+function openEntryFor(staffId, period){
+  editingForm = false;
+  entrySelectedId = staffId;
+  entrySelectedPeriod = period;
+  activeTab = "entry";
+  render();
+  window.scrollTo(0,0);
+}
+function todoRow(staffObj, status, onClick, label){
+  const b = document.createElement("button");
+  b.className = "todo-row";
+  b.innerHTML = `<span class="nm">${staffObj.name}</span><span class="st-chip ${status}">${label || EVAL_STATUS_LABEL[status]}</span><span class="arrow">›</span>`;
+  b.onclick = onClick;
+  return b;
+}
+function homeTitle(text){
+  const h = document.createElement("h2");
+  h.className = "title";
+  h.textContent = text;
+  return h;
+}
+const ADMIN_MENU_DESC = {
+  dashboard:"全員の点数と確定状況を一覧で見る", personal:"1人の推移とグラフを見る", entry:"点数・コメント・目標をつける",
+  goalTraining:"目標と一言メモを見る・書く", ninebox:"勤続と達成率・★保持者を分析", shifts:"日別シフトの取り込み",
+  staffAdmin:"スタッフ・評価者・担当の管理", guideline:"評価の基準とルール", history:"誰がいつ何を変えたか",
+};
+const GENERAL_MENU_DESC = {
+  myPage:"評価結果の確認と次回の目標", mySelfEval:"自分で自分を評価する", myNotes:"気づいたことを記録する", guideline:"評価の基準",
+};
+
+function renderHomeAdmin(){
+  const wrap = document.createElement("div");
+  const me = currentStaffObj();
+  wrap.appendChild(homeTitle(`ホーム(${selectedYear}年度)`));
+  wrap.appendChild(renderPeriodButtons(homePeriod, (p)=>{ homePeriod = p; render(); }));
+
+  // 自分の担当(評価者の場合)
+  if(me && me.isEvaluator){
+    const mine = assigneesOf(me.id);
+    const card = document.createElement("div");
+    card.className = "card";
+    const byStatus = {todo:[], doing:[], done:[], skip:[]};
+    mine.forEach(s=> byStatus[evalStatus(s, selectedYear, homePeriod)].push(s));
+    const canConfirm = isCurrentUserAdmin(); // 確定できない評価者は、入力が済めば自分のやることは完了
+    const remaining = byStatus.todo.length + (canConfirm ? byStatus.doing.length : 0);
+    card.innerHTML = `<div class="home-card-title">あなたの担当(${homePeriod}分)</div>
+      <div class="home-card-sub">${mine.length===0 ? "担当が割り当てられていません。" : remaining===0 ? (canConfirm ? `担当${mine.length}人の評価はすべて確定しています。` : `担当${mine.length}人の入力はすべて終わっています。確定は管理者が行います。`) : `担当${mine.length}人のうち、残り${remaining}人です。`}</div>`;
+    const groups = canConfirm ? [["todo","未入力"], ["doing","入力中・確定待ち"]] : [["todo","未入力"]];
+    groups.forEach(([key,label])=>{
+      if(byStatus[key].length===0) return;
+      const head = document.createElement("div");
+      head.className = "todo-group-head";
+      head.textContent = `${label}(${byStatus[key].length})`;
+      card.appendChild(head);
+      byStatus[key].forEach(s=> card.appendChild(todoRow(s, key, ()=>openEntryFor(s.id, homePeriod))));
+    });
+    const doneList = canConfirm ? [...byStatus.done, ...byStatus.skip] : [...byStatus.doing, ...byStatus.done, ...byStatus.skip];
+    if(doneList.length){
+      const det = document.createElement("details");
+      det.innerHTML = `<summary class="todo-group-head" style="cursor:pointer;">${canConfirm ? "確定済み・対象外" : "入力済み・確定済み"}(${doneList.length})</summary>`;
+      doneList.forEach(s=>{
+        const st = evalStatus(s, selectedYear, homePeriod);
+        det.appendChild(todoRow(s, st==="doing" ? "done" : st, ()=>openEntryFor(s.id, homePeriod), st==="doing" ? "入力済み" : null));
+      });
+      card.appendChild(det);
+    }
+    wrap.appendChild(card);
+  }
+
+  // 全体の進み具合(管理者)
+  if(isCurrentUserAdmin()){
+    const card = document.createElement("div");
+    card.className = "card";
+    const all = activeEvaluatees();
+    const doneCount = all.filter(s=>["done","skip"].includes(evalStatus(s, selectedYear, homePeriod))).length;
+    const pct = all.length ? Math.round(doneCount/all.length*100) : 0;
+    card.innerHTML = `<div class="home-card-title">全体の進み具合(${homePeriod}分)</div>
+      <div style="font-size:13px;font-weight:700;">確定 ${doneCount} / ${all.length}人</div>
+      <div class="progress-bar"><div style="width:${pct}%"></div></div>`;
+
+    const evaluators = state.staff.filter(s=>s.isEvaluator && s.status==="active");
+    evaluators.forEach(ev=>{
+      const list = assigneesOf(ev.id);
+      if(list.length===0) return;
+      const st = list.map(s=>evalStatus(s, selectedYear, homePeriod));
+      const n = k => st.filter(x=>x===k).length;
+      const row = document.createElement("div");
+      row.className = "assign-row";
+      row.innerHTML = `<div class="nm">${ev.name}</div>
+        <span class="st-chip todo" style="${n("todo")?"":"visibility:hidden"}">未入力 ${n("todo")}</span>
+        <span class="st-chip doing" style="${n("doing")?"":"visibility:hidden"}">入力中 ${n("doing")}</span>
+        <span class="st-chip done">確定 ${n("done")+n("skip")}/${list.length}</span>`;
+      card.appendChild(row);
+    });
+
+    const unassigned = all.filter(s=>!assignedEvaluatorOf(s));
+    if(unassigned.length){
+      const task = document.createElement("div");
+      task.className = "home-task";
+      task.style.marginTop = "12px";
+      task.innerHTML = `<div class="msg">評価担当が決まっていない人が${unassigned.length}人います</div>`;
+      const go = document.createElement("button");
+      go.className = "btn-ghost";
+      go.textContent = "担当を割り当てる";
+      go.onclick = ()=>{ activeTab = "staffAdmin"; render(); };
+      task.appendChild(go);
+      card.appendChild(task);
+    }
+    wrap.appendChild(card);
+  }
+
+  const menuCard = document.createElement("div");
+  menuCard.className = "card";
+  menuCard.innerHTML = `<div class="home-card-title" style="margin-bottom:12px;">メニュー</div>`;
+  menuCard.appendChild(menuGrid(ADMIN_TABS.filter(t=>t.id!=="home").map(t=>({id:t.id, label:t.label, desc:ADMIN_MENU_DESC[t.id]||""}))));
+  wrap.appendChild(menuCard);
+  return wrap;
+}
+
+function renderHomeGeneral(){
+  const wrap = document.createElement("div");
+  const me = currentStaffObj();
+  if(!me){
+    wrap.innerHTML = `<div class="card"><div class="empty">ログイン中のスタッフ情報が見つかりませんでした。</div></div>`;
+    return wrap;
+  }
+  wrap.appendChild(homeTitle(`${me.name}さん、おつかれさまです`));
+
+  const card = document.createElement("div");
+  card.className = "card";
+  card.innerHTML = `<div class="home-card-title" style="margin-bottom:12px;">やること(${selectedYear}年度 ${homePeriod}分)</div>`;
+  const addTask = (msg, btnLabel, onClick, done)=>{
+    const task = document.createElement("div");
+    task.className = "home-task" + (done ? " done" : "");
+    task.innerHTML = `<div class="msg">${msg}</div>`;
+    if(btnLabel){
+      const b = document.createElement("button");
+      b.className = "primary";
+      b.textContent = btnLabel;
+      b.onclick = onClick;
+      task.appendChild(b);
+    }
+    card.appendChild(task);
+  };
+  if(!me.yearData[selectedYear]) me.yearData[selectedYear] = emptyPeriods();
+  const pd = me.yearData[selectedYear][homePeriod];
+  if(!me.isEvaluatee){
+    addTask("評価の対象外のため、やることはありません", null, null, true);
+  } else if(pd.exempt){
+    addTask(`${homePeriod}分は評価の対象外です`, null, null, true);
+  } else if(!pd.selfSubmitted){
+    addTask(`${homePeriod}分の自己評価がまだです`, "自己評価をする", ()=>{ mySelfPeriod = homePeriod; activeTab = "mySelfEval"; render(); });
+  } else if(!pd.confirmed){
+    addTask("自己評価は提出済みです。評価者の確定を待っています", null, null, true);
+  } else if(!(pd.selfGoal||"").trim()){
+    addTask(`${homePeriod}分の評価結果が出ました。確認して次回の目標を立てましょう`, "結果を見る", ()=>{ myPagePeriod = homePeriod; activeTab = "myPage"; render(); });
+  } else {
+    addTask(`${homePeriod}分はすべて完了しています`, "結果を見る", ()=>{ myPagePeriod = homePeriod; activeTab = "myPage"; render(); }, true);
+  }
+  wrap.appendChild(card);
+
+  const menuCard = document.createElement("div");
+  menuCard.className = "card";
+  menuCard.innerHTML = `<div class="home-card-title" style="margin-bottom:12px;">メニュー</div>`;
+  menuCard.appendChild(menuGrid(GENERAL_TABS.filter(t=>t.id!=="home").map(t=>({id:t.id, label:t.label, desc:GENERAL_MENU_DESC[t.id]||""}))));
+  wrap.appendChild(menuCard);
+  return wrap;
+}
+
 /* ============================== マイページ(一般スタッフ専用) ============================== */
+let myGoalSnapshot = "";
 function renderMyPage(){
   const wrap = document.createElement("div");
   const me = currentStaffObj();
@@ -3293,7 +3470,7 @@ function renderMyPage(){
   h.textContent = `${me.name}さんのマイページ(${selectedYear}年度)`;
   titleRow.appendChild(h);
   wrap.appendChild(titleRow);
-  wrap.appendChild(renderPeriodButtons(myPagePeriod, (p)=>{ myPagePeriod = p; render(); }));
+  wrap.appendChild(renderPeriodButtons(myPagePeriod, (p)=> guardedNavigate(()=>{ myPagePeriod = p; render(); })));
 
   // 自己評価を出し、かつ評価者が確定するまでは中身を見せない(順序を守ってバイアスを避けつつ、
   // 未確定の書きかけスコアが見えて後で食い違う事態も避ける)
@@ -3320,50 +3497,44 @@ function renderMyPage(){
     return wrap;
   }
 
-  // 目標は「設定した期間の"次"の期間に対する目標」として扱う。
-  // なので「今見ている期間(myPagePeriod)の振り返り」には、1つ前の期間で設定された目標を表示する。
-  const prevRef = previousPeriodRef(selectedYear, myPagePeriod);
-  const prevPd = prevRef ? me.yearData[prevRef.fiscalYear]?.[prevRef.period] : null;
-  const prevSelfGoal = prevPd?.selfGoal || "";
-  const prevEvaluatorGoal = prevPd?.evaluatorGoal || "";
-
-  const goalCard = document.createElement("div");
-  goalCard.className = "card";
-  goalCard.innerHTML = `
-    <div style="font-weight:800;font-size:14px;margin-bottom:10px;">前回設定した、今回までの目標(振り返り)</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-      <div>
-        <div style="font-size:12px;color:var(--muted);font-weight:700;margin-bottom:4px;">自分の目標宣言</div>
-        <div style="font-size:14px;font-weight:700;white-space:pre-wrap;">${prevSelfGoal ? prevSelfGoal.replace(/</g,"&lt;") : "(未設定)"}</div>
-      </div>
-      <div>
-        <div style="font-size:12px;color:var(--muted);font-weight:700;margin-bottom:4px;">評価者からの目標</div>
-        <div style="font-size:14px;font-weight:700;white-space:pre-wrap;">${prevEvaluatorGoal ? prevEvaluatorGoal.replace(/</g,"&lt;") : "(まだ設定されていません)"}</div>
-      </div>
-    </div>
+  // 1) 評価者からのコメント
+  const commentCard = document.createElement("div");
+  commentCard.className = "card";
+  commentCard.innerHTML = `
+    <div class="home-card-title" style="margin-bottom:6px;">評価者からのコメント</div>
+    <div style="font-size:14px;white-space:pre-wrap;line-height:1.7;">${pd.comment ? pd.comment.replace(/</g,"&lt;") : '<span style="color:var(--muted);">(コメントはありません)</span>'}</div>
   `;
-  wrap.appendChild(goalCard);
+  wrap.appendChild(commentCard);
 
-  const evalStars = starCount(pd.scores);
-  const selfStars = starCount(pd.selfScores || emptyScores());
-  const gap = evalStars - selfStars;
-  const gapColor = gap===0 ? "var(--ink)" : (gap>0 ? "var(--green)" : "var(--ember-dark)");
-  const totalCard = document.createElement("div");
-  totalCard.className = "card";
-  totalCard.innerHTML = `
-    <div style="display:flex;gap:28px;flex-wrap:wrap;">
-      <div><div style="font-size:12px;color:var(--muted);font-weight:700;">評価者がつけた★</div><div style="font-size:24px;font-weight:800;">${evalStars}</div></div>
-      <div><div style="font-size:12px;color:var(--muted);font-weight:700;">自己評価の★</div><div style="font-size:24px;font-weight:800;">${selfStars}</div></div>
-      <div><div style="font-size:12px;color:var(--muted);font-weight:700;">ギャップ</div><div style="font-size:24px;font-weight:800;color:${gapColor};">${gap>=0?"+":""}${gap}</div></div>
-    </div>
-  `;
-  wrap.appendChild(totalCard);
+  // 2) 自己評価とズレた項目だけを抜き出す
+  const diffs = [];
+  CATEGORIES.forEach(cat=> cat.items.forEach(it=>{
+    const v = pd.scores[it.name] ?? 0;
+    const sv = pd.selfScores?.[it.name] ?? 0;
+    if(v !== sv) diffs.push({it, v, sv});
+  }));
+  const diffCard = document.createElement("div");
+  diffCard.className = "card";
+  diffCard.innerHTML = `<div class="home-card-title">自己評価とのズレ${diffs.length ? `(${diffs.length}項目)` : ""}</div>
+    <div class="home-card-sub">${diffs.length ? "自分がつけた点数と、評価者がつけた点数が違った項目です。" : "自己評価と評価者の点数は、すべての項目で一致しました。"}</div>`;
+  diffs.forEach(d=>{
+    const up = d.v > d.sv;
+    const row = document.createElement("div");
+    row.className = "diff-row";
+    row.innerHTML = `<span class="nm">${d.it.name}</span>
+      <span class="val">自分 ${d.sv}/${d.it.max}</span><span class="arrow">→</span>
+      <span class="val strong ${up ? "up" : "down"}">評価者 ${d.v}/${d.it.max}</span>`;
+    diffCard.appendChild(row);
+  });
+  wrap.appendChild(diffCard);
 
-  const tableCard = document.createElement("div");
-  tableCard.className = "card";
-  tableCard.innerHTML = `<div style="font-weight:800;font-size:15px;margin-bottom:12px;">${myPagePeriod}の評価スコア(評価者 / 自己評価)</div>`;
+  // 3) 全項目の点数(普段は折りたたむ)
+  const tableCard = document.createElement("details");
+  tableCard.className = "card fold-card";
+  tableCard.innerHTML = `<summary class="home-card-title">${myPagePeriod}の全項目の点数を見る</summary>`;
   const tableWrap = document.createElement("div");
   tableWrap.className = "table-wrap";
+  tableWrap.style.marginTop = "12px";
   const table = document.createElement("table");
   table.className = "pcard-table pcard-table-compare";
   table.innerHTML = `<thead><tr><th colspan="2" class="item-col-head">評価項目</th><th>評価者</th><th>自己評価</th></tr></thead>`;
@@ -3398,20 +3569,35 @@ function renderMyPage(){
   tableCard.appendChild(tableWrap);
   wrap.appendChild(tableCard);
 
-  const commentCard = document.createElement("div");
-  commentCard.className = "card";
-  commentCard.innerHTML = `
-    <div style="font-weight:800;font-size:14px;margin-bottom:6px;">評価者からのコメント</div>
-    <div style="font-size:13.5px;white-space:pre-wrap;">${pd.comment ? pd.comment.replace(/</g,"&lt;") : '<span style="color:var(--muted);">(まだコメントはありません)</span>'}</div>
-  `;
-  wrap.appendChild(commentCard);
+  // 4) 前回立てた目標の振り返り(どちらも未設定なら出さない)
+  // 目標は「設定した期間の"次"の期間に対する目標」なので、1つ前の期間で設定された目標を表示する。
+  const prevRef = previousPeriodRef(selectedYear, myPagePeriod);
+  const prevPd = prevRef ? me.yearData[prevRef.fiscalYear]?.[prevRef.period] : null;
+  const prevSelfGoal = prevPd?.selfGoal || "";
+  const prevEvaluatorGoal = prevPd?.evaluatorGoal || "";
+  if(prevSelfGoal || prevEvaluatorGoal){
+    const goalCard = document.createElement("div");
+    goalCard.className = "card";
+    const esc = s => s.replace(/</g,"&lt;");
+    goalCard.innerHTML = `
+      <div class="home-card-title" style="margin-bottom:10px;">前回立てた、今回までの目標</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;">
+        ${prevSelfGoal ? `<div><div style="font-size:12px;color:var(--muted);font-weight:700;margin-bottom:4px;">自分の目標</div><div style="font-size:14px;font-weight:700;white-space:pre-wrap;">${esc(prevSelfGoal)}</div></div>` : ""}
+        ${prevEvaluatorGoal ? `<div><div style="font-size:12px;color:var(--muted);font-weight:700;margin-bottom:4px;">評価者からの目標</div><div style="font-size:14px;font-weight:700;white-space:pre-wrap;">${esc(prevEvaluatorGoal)}</div></div>` : ""}
+      </div>
+    `;
+    wrap.appendChild(goalCard);
+  }
 
-  // 評価者との評価・自己評価のギャップを見た上で、次回までの目標をここで設定する。
-  // ここで書いた内容は、この期間(myPagePeriod)のselfGoalとして保存され、
-  // 次の期間が来た時に「前回設定した目標」として振り返り表示される。
+  // 5) 次回までの目標を設定する(この期間のselfGoalとして保存し、次の期間で振り返り表示される)
   const nextRefForGoal = advancePeriod(selectedYear, myPagePeriod);
   const canAdvance = !(nextRefForGoal.period===myPagePeriod && nextRefForGoal.fiscalYear===selectedYear);
   const nextLabelForGoal = canAdvance ? periodLabel(nextRefForGoal, selectedYear) : "次回";
+  if(!unsaved) myGoalSnapshot = pd.selfGoal || "";
+  leaveGuard = {
+    save: ()=> saveState(),
+    discard: ()=>{ pd.selfGoal = myGoalSnapshot; },
+  };
   const goalSetCard = document.createElement("div");
   goalSetCard.className = "card";
   const goalSetHead = document.createElement("label");
@@ -3420,14 +3606,14 @@ function renderMyPage(){
   const goalSetInput = document.createElement("textarea");
   goalSetInput.placeholder = "例:レジとドリンカーを一人で回せるようになる";
   goalSetInput.value = pd.selfGoal || "";
-  goalSetInput.oninput = ()=>{ pd.selfGoal = goalSetInput.value; };
+  goalSetInput.oninput = ()=>{ markDirty(); pd.selfGoal = goalSetInput.value; };
   goalSetCard.appendChild(goalSetInput);
   const goalSetRow = document.createElement("div");
   goalSetRow.style.cssText = "margin-top:10px;display:flex;justify-content:flex-end;";
   const goalSetBtn = document.createElement("button");
   goalSetBtn.className = "primary";
   goalSetBtn.textContent = "目標を保存する";
-  goalSetBtn.onclick = async ()=>{ await saveState(); };
+  goalSetBtn.onclick = async ()=>{ clearDirty(); await saveState(); };
   goalSetRow.appendChild(goalSetBtn);
   goalSetCard.appendChild(goalSetRow);
   wrap.appendChild(goalSetCard);
@@ -3436,6 +3622,7 @@ function renderMyPage(){
 }
 
 /* ============================== 自己評価(一般スタッフ専用) ============================== */
+let selfEvalSnapshot = null;
 function renderMySelfEval(){
   const wrap = document.createElement("div");
   const me = currentStaffObj();
@@ -3454,7 +3641,12 @@ function renderMySelfEval(){
   h.textContent = `自己評価(${selectedYear}年度)`;
   titleRow.appendChild(h);
   wrap.appendChild(titleRow);
-  wrap.appendChild(renderPeriodButtons(mySelfPeriod, (p)=>{ mySelfPeriod = p; render(); }));
+  wrap.appendChild(renderPeriodButtons(mySelfPeriod, (p)=> guardedNavigate(()=>{ mySelfPeriod = p; render(); })));
+  if(!unsaved) selfEvalSnapshot = JSON.parse(JSON.stringify(pd.selfScores)); // 「保存せず移動」で戻す先
+  leaveGuard = {
+    save: ()=> saveState(), // 提出はせず、下書きとして保存
+    discard: ()=>{ pd.selfScores = JSON.parse(JSON.stringify(selfEvalSnapshot)); },
+  };
 
   if(pd.selfSubmitted){
     const doneBanner = document.createElement("div");
@@ -3471,57 +3663,13 @@ function renderMySelfEval(){
   subTitle.textContent = `${mySelfPeriod}の自己チェック(自分が今どのレベルだと思うか)`;
   card.appendChild(subTitle);
 
-  const tableWrap = document.createElement("div");
-  tableWrap.className = "paper-table-wrap";
-  const table = document.createElement("table");
-  table.className = "paper-table";
-  const tbody = document.createElement("tbody");
-  CATEGORIES.forEach(cat=>{
-    cat.items.forEach((it, idx)=>{
-      const tr = document.createElement("tr");
-      if(idx===0){
-        const catTd = document.createElement("td");
-        catTd.className = "cat-col " + CAT_CLASS[cat.id];
-        catTd.rowSpan = cat.items.length;
-        catTd.textContent = cat.label;
-        tr.appendChild(catTd);
-      }
-      const nameTd = document.createElement("td");
-      nameTd.className = "item-col";
-      nameTd.textContent = it.name;
-      tr.appendChild(nameTd);
-      const optsTd = document.createElement("td");
-      optsTd.className = "opts-col";
-      const chipGroup = document.createElement("div");
-      chipGroup.className = "chip-group";
-      const current = pd.selfScores[it.name] ?? 0;
-      for(let v=0; v<=it.max; v++){
-        const chip = document.createElement("button");
-        chip.className = "chip-btn" + (v===current ? " selected" : "");
-        chip.textContent = v;
-        // ここでrender()を呼ぶと画面全体が再構築され、横スクロール位置が
-        // 強制的に先頭へ戻ってしまう(ストレスの原因だった)。値の更新と、
-        // このチップ行の見た目の切り替えだけをその場で行い、全体の再描画はしない。
-        chip.onclick = ()=>{
-          pd.selfScores[it.name] = v;
-          chipGroup.querySelectorAll(".chip-btn").forEach(b=> b.classList.remove("selected"));
-          chip.classList.add("selected");
-        };
-        chipGroup.appendChild(chip);
-      }
-      optsTd.appendChild(chipGroup);
-      tr.appendChild(optsTd);
-      tbody.appendChild(tr);
-    });
-  });
-  table.appendChild(tbody);
-  tableWrap.appendChild(table);
+  const tableWrap = buildScoreChipTable(pd.selfScores, {onChange: markDirty});
   card.appendChild(tableWrap);
 
   const saveRow = document.createElement("div");
-  saveRow.style.cssText = "margin-top:18px;display:flex;justify-content:flex-end;gap:12px;align-items:center;flex-wrap:wrap;";
+  saveRow.className = "sticky-actions";
   const note = document.createElement("span");
-  note.style.cssText = "font-size:12px;color:var(--muted);";
+  note.className = "note";
   note.textContent = "提出すると、評価者の確定後にマイページで比較が見られるようになります。";
   saveRow.appendChild(note);
   const saveBtn = document.createElement("button");
@@ -3529,6 +3677,7 @@ function renderMySelfEval(){
   saveBtn.textContent = `${mySelfPeriod}分を提出する`;
   saveBtn.onclick = async ()=>{
     pd.selfSubmitted = true;
+    clearDirty();
     await saveState();
     myPagePeriod = mySelfPeriod;
     activeTab = "myPage";
@@ -3815,6 +3964,11 @@ function startApp(){
       return; // 編集中は他人の更新の取り込みを見送る(自分の未保存の変更を守る)
     }
     const migrated = migrateCoreState(val);
+    const incoming = JSON.stringify({staff: migrated.staff, years: migrated.years});
+    if(firstLoadDone && incoming === JSON.stringify({staff: state.staff, years: state.years})){
+      lastServerCore = JSON.parse(incoming); // 内容が手元と同じ(=自分の保存の反映)なので、再描画しない
+      return;
+    }
     state.staff = migrated.staff;
     state.years = migrated.years;
     state.updatedAt = migrated.updatedAt;
