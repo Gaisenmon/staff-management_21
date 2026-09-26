@@ -582,9 +582,13 @@ function migrateCoreState(s){
     if(!Array.isArray(st.growthNotes)) st.growthNotes = [];
     if(st.assignedEvaluatorId === undefined) st.assignedEvaluatorId = ""; // 評価担当(評価者のstaff id)
     if(st.yearData){
-      Object.values(st.yearData).forEach(yd=>{
-        Object.values(yd).forEach(pd=>{
+      Object.entries(st.yearData).forEach(([fy, yd])=>{
+        Object.entries(yd).forEach(([period, pd])=>{
           if(pd.exempt === undefined) pd.exempt = false;
+          // 入社より前の期間は自動で評価対象外にする(入社日を後から変えた場合は自動で解除)
+          const beforeHire = isBeforeHire(st.hireDate, fy, period);
+          if(beforeHire && !pd.exempt){ pd.exempt = true; pd.exemptAuto = true; }
+          else if(!beforeHire && pd.exemptAuto){ pd.exempt = false; delete pd.exemptAuto; }
           if(!pd.selfScores) pd.selfScores = emptyScores();
           if(pd.selfGoal === undefined) pd.selfGoal = "";
           if(pd.selfSubmitted === undefined) pd.selfSubmitted = false;
@@ -594,6 +598,16 @@ function migrateCoreState(s){
     }
   });
   return s;
+}
+/* 評価時期ごとの対象期間の最終日(年度yの「4月」=y年2〜4月分 → y-04-30 など) */
+function periodEndDate(fy, period){
+  const y = Number(fy);
+  return {"4月":`${y}-04-30`, "7月":`${y}-07-31`, "10月":`${y}-10-31`, "1月":`${y+1}-01-31`}[period] || null;
+}
+/* 入社日が、その評価の対象期間の最終日より後 = その期間はまだ働いていない */
+function isBeforeHire(hireDate, fy, period){
+  const end = periodEndDate(fy, period);
+  return !!(hireDate && end && hireDate > end);
 }
 function defaultCoreState(){ return { staff: seedStaff(), years: [INITIAL_YEAR], updatedAt: null }; }
 
@@ -677,6 +691,7 @@ function saveState(){
    2台がほぼ同時に保存しても、後の方は必ず先の方の保存結果の上に合成し直されるため、
    どちらかの変更が消えることがない。 */
 async function saveStateNow(){
+  migrateCoreState({staff: state.staff, years: state.years}); // 入社前の期間の自動対象外などを手元にも反映
   const localCore = JSON.parse(JSON.stringify({staff: state.staff, years: state.years}));
   const baseCore = lastServerCore;
   try{
@@ -1688,6 +1703,29 @@ function renderDashboard(){
     };
     bulkRow.appendChild(bulkBtn);
   }
+  // 確定の一括解除(確定済みの人をまとめて編集できる状態に戻す)
+  const confirmedList = filtered.filter(st => statusOf(st)==="done");
+  if(confirmedList.length > 0 && isCurrentUserAdmin()){
+    const unBtn = document.createElement("button");
+    unBtn.className = "btn-ghost";
+    unBtn.textContent = `確定済みの${confirmedList.length}名の確定を解除`;
+    unBtn.onclick = ()=>{
+      showModal(`表示中の確定済み${confirmedList.length}名の確定を解除し、編集できる状態に戻します(点数はそのまま残ります)。よろしいですか?`, async ()=>{
+        await takeSnapshot(`確定の一括解除の前(${selectedYear}年度 ${periodName(dashboardPeriod)})`);
+        confirmedList.forEach(st=>{
+          const pd = st.yearData[selectedYear][dashboardPeriod];
+          if(pd.confirmed){
+            const before = clonePeriod(pd);
+            pd.confirmed = false;
+            diffAndLog(st, selectedYear, dashboardPeriod, before, pd);
+          }
+        });
+        saveState();
+        render();
+      }, {confirmLabel:"確定を解除する"});
+    };
+    bulkRow.appendChild(unBtn);
+  }
   card.appendChild(bulkRow);
 
   wrap.appendChild(card);
@@ -1924,14 +1962,16 @@ function renderEntry(){
   const exemptCheck = document.createElement("input");
   exemptCheck.type = "checkbox";
   exemptCheck.checked = !!periodData.exempt;
-  exemptCheck.disabled = locked;
+  exemptCheck.disabled = locked || !!periodData.exemptAuto;
   exemptCheck.onchange = ()=>{
     markDirty();
     periodData.exempt = exemptCheck.checked;
     render();
   };
   exemptRow.appendChild(exemptCheck);
-  exemptRow.appendChild(document.createTextNode(`${periodName(entrySelectedPeriod)}は評価対象外にする(入社間もない等)`));
+  exemptRow.appendChild(document.createTextNode(periodData.exemptAuto
+    ? `${periodName(entrySelectedPeriod)}は入社(${staffObj.hireDate})より前の期間のため、自動で評価対象外です`
+    : `${periodName(entrySelectedPeriod)}は評価対象外にする(入社間もない等)`));
   card.appendChild(exemptRow);
   if(periodData.exempt){
     const exemptBanner = document.createElement("div");
