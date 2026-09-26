@@ -862,9 +862,11 @@ function showModal(message, onConfirm, opts){
   cancelBtn.style.cssText = "background:#fff;border:1px solid var(--line);color:var(--muted);border-radius:8px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;";
   cancelBtn.onclick = ()=>{ overlay.remove(); if(opts.onCancel) opts.onCancel(); };
   if(opts.altLabel){
+    // 3択のときは、押し間違えないよう縦に並べる(上から:保存して移動・保存せず移動・戻る)
+    btnRow.style.cssText = "display:flex;flex-direction:column-reverse;gap:8px;";
     const altBtn = document.createElement("button");
     altBtn.textContent = opts.altLabel;
-    altBtn.style.cssText = "background:#fff;border:1px solid #E7B4AD;color:var(--red, #B23A2E);border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;margin-right:auto;";
+    altBtn.style.cssText = "background:#fff;border:1px solid #E7B4AD;color:var(--red, #B23A2E);border-radius:8px;padding:10px 14px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit;";
     altBtn.onclick = ()=>{ overlay.remove(); opts.onAlt(); };
     btnRow.appendChild(altBtn);
   }
@@ -874,6 +876,7 @@ function showModal(message, onConfirm, opts){
   okBtn.onclick = ()=>{ overlay.remove(); onConfirm(); };
   btnRow.appendChild(cancelBtn);
   btnRow.appendChild(okBtn);
+  if(opts.altLabel) btnRow.insertBefore(cancelBtn, btnRow.firstChild); // 縦並び時は上から:確定側・もう一方・戻る
   box.appendChild(btnRow);
   overlay.appendChild(box);
   document.body.appendChild(overlay);
