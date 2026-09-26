@@ -485,8 +485,14 @@ let historyLoaded = false;
 let firstLoadDone = false;
 
 /* 本体(staff/years)側の移行処理。履歴は別パスになったのでここでは扱わない。 */
+/* 削除したスタッフの記録(stores/.../ats/deletedStaff)。本体とは別の場所に置くので、
+   古い版のアプリを開いたままの端末が保存しても消えない。ここに載っている人は、
+   本体のデータに残っていても(=古い端末が書き戻しても)表示・保存の対象から外す。 */
+let deletedStaffIds = new Set();
+const deletedStaffRef = ()=> ref(db, `stores/${STORE_ID}/ats/deletedStaff`);
 function migrateCoreState(s){
   if(!Array.isArray(s.staff)) s.staff = [];
+  s.staff = s.staff.filter(st=> st && !deletedStaffIds.has(String(st.id)));
   if(!s.years || s.years.length===0) s.years = [INITIAL_YEAR];
   s.staff.forEach(st=>{
     if(!st.status){ st.status = st.active===false ? "resigned" : "active"; }
@@ -3240,7 +3246,12 @@ const STATUS_META = {
     form.querySelector(".se-cancel").onclick = ()=>{ editingStaffId = null; render(); };
     form.querySelector(".se-delete").onclick = ()=>{
       if(editingStaff.name === currentPersonName){ showToast("ログイン中の自分自身は削除できません"); return; }
-      showModal(`${editingStaff.name}さんを削除します。過去の評価データ・一言メモも一緒に消え、元に戻せません。よろしいですか?\n(ログイン用のアカウントはFirebase側に残ります)`, ()=>{
+      showModal(`${editingStaff.name}さんを削除します。過去の評価データ・一言メモも一緒に消え、元に戻せません。よろしいですか?\n(ログイン用のアカウントはFirebase側に残ります)`, async ()=>{
+        const delId = String(editingStaff.id);
+        deletedStaffIds.add(delId);
+        try{
+          await set(ref(db, `stores/${STORE_ID}/ats/deletedStaff/${delId}`), {name: editingStaff.name, code: editingStaff.code || "", ts: new Date().toISOString(), by: currentPersonName || ""});
+        }catch(e){ console.error("削除記録の保存に失敗", e); }
         logGenericChange(editingStaff.name, "スタッフ", "登録あり", "削除");
         state.staff = state.staff.filter(s=>s.id!==editingStaff.id);
         editingStaffId = null;
@@ -4112,6 +4123,18 @@ function startApp(){
     stateLoaded = true;
     currentPersonName = resolveCurrentPersonName();
     if(firstLoadDone) render(); else tryFirstRender();
+  });
+
+  // 削除したスタッフの記録をリアルタイム購読。他の端末で削除されたら、手元からも外す
+  onValue(deletedStaffRef(), (snap)=>{
+    const ids = new Set(Object.keys(snap.val() || {}));
+    const added = [...ids].some(id=> !deletedStaffIds.has(id));
+    deletedStaffIds = new Set([...deletedStaffIds, ...ids]);
+    if(!added || !firstLoadDone) return;
+    const keep = st => !deletedStaffIds.has(String(st.id));
+    state.staff = state.staff.filter(keep);
+    if(lastServerCore) lastServerCore.staff = lastServerCore.staff.filter(keep);
+    requestRender();
   });
 
   // シフトの日付一覧をリアルタイム購読。他の端末で取り込み・再取り込み・削除があったら、
