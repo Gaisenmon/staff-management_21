@@ -302,7 +302,7 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script type="module">
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getDatabase, ref, set, get, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+import { getDatabase, ref, set, get, onValue, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 /* ==============================================================
@@ -521,19 +521,49 @@ let lastServerHistory = null; // history配列の基準点
    その最新データに重ねてから書き込む。
    理由:「編集中は他人の更新を取り込まない」ガードのせいで、長時間編集している間に
    他の人が保存した内容を、自分の保存時にまるごと上書きして消してしまう事故があったため。 */
+/* ---- 端末間の変更を「項目単位」で合成する(3-wayマージ) ----
+   base=最後にサーバーと一致していた状態 / local=この端末の今の状態 / latest=サーバーの最新。
+   この端末で変えた項目だけ自分の値を使い、それ以外は最新を採用する。同じ人の別々の項目
+   (例:Aさんが点数、Bさんが評価担当)を同時に変えても、どちらも残る。
+   id付きの配列(一言メモなど)はid単位で、追加・削除を両方の端末分反映する。 */
+function canon(v){
+  if(Array.isArray(v)) return "[" + v.map(canon).join(",") + "]";
+  if(v && typeof v === "object") return "{" + Object.keys(v).filter(k=>v[k]!==undefined).sort().map(k=>JSON.stringify(k)+":"+canon(v[k])).join(",") + "}";
+  return JSON.stringify(v ?? null);
+}
+function sameVal(a, b){ return canon(a) === canon(b); }
+const isPlainObj = v => v && typeof v === "object" && !Array.isArray(v);
+const isIdArray = v => Array.isArray(v) && v.every(x=> isPlainObj(x) && x.id !== undefined);
+function merge3(base, local, latest){
+  if(sameVal(local, base)) return latest;
+  if(sameVal(latest, base) || sameVal(local, latest)) return local;
+  if(isPlainObj(local) && isPlainObj(latest)){
+    const b = isPlainObj(base) ? base : {};
+    const out = {};
+    new Set([...Object.keys(local), ...Object.keys(latest), ...Object.keys(b)]).forEach(k=>{
+      const v = merge3(b[k], local[k], latest[k]);
+      if(v !== undefined) out[k] = v;
+    });
+    return out;
+  }
+  if(isIdArray(local) && isIdArray(latest)){
+    const bMap = new Map((isIdArray(base) ? base : []).map(x=>[x.id, x]));
+    const lMap = new Map(local.map(x=>[x.id, x]));
+    const rMap = new Map(latest.map(x=>[x.id, x]));
+    const out = [];
+    latest.forEach(r=>{
+      const bi = bMap.get(r.id), li = lMap.get(r.id);
+      if(!li){ if(bi && sameVal(bi, r)) return; out.push(r); return; } // この端末で消した(相手が未変更なら消す)
+      out.push(merge3(bi, li, r));
+    });
+    local.forEach(l=>{ if(!rMap.has(l.id) && !bMap.has(l.id)) out.push(l); }); // この端末で追加した分
+    return out;
+  }
+  return local; // 同じ項目を両方が変えた場合は、今保存しようとしている側を優先
+}
 function mergeStateForSave(latest, local, base){
   const merged = {...latest};
-  const baseStaffMap = new Map((base?.staff||[]).map(s=>[s.id, s]));
-  const localStaffMap = new Map((local.staff||[]).map(s=>[s.id, s]));
-  const mergedStaffMap = new Map((latest.staff||[]).map(s=>[s.id, s])); // 基本は最新データを採用
-  localStaffMap.forEach((localSt, id)=>{
-    const baseSt = baseStaffMap.get(id);
-    const changed = !baseSt || JSON.stringify(baseSt) !== JSON.stringify(localSt);
-    if(changed || !mergedStaffMap.has(id)){
-      mergedStaffMap.set(id, localSt); // 自分が実際に触った(=基準点から変化した)人だけ、自分の値を優先
-    }
-  });
-  merged.staff = Array.from(mergedStaffMap.values());
+  merged.staff = merge3(base?.staff, local.staff||[], latest.staff||[]);
   // 年度は増える一方の情報なので、両方を合わせる
   merged.years = Array.from(new Set([...(latest.years||[]), ...(local.years||[])])).sort();
   return merged;
@@ -558,38 +588,46 @@ function saveState(){
   saveChain = saveChain.then(saveStateNow, saveStateNow);
   return saveChain;
 }
+/* 保存は「読み込み→合成→書き込み」をトランザクションで一体に行う。
+   2台がほぼ同時に保存しても、後の方は必ず先の方の保存結果の上に合成し直されるため、
+   どちらかの変更が消えることがない。 */
 async function saveStateNow(){
-  // ---- 本体(staff/years) ----
+  const localCore = JSON.parse(JSON.stringify({staff: state.staff, years: state.years}));
+  const baseCore = lastServerCore;
   try{
-    const snap = await get(stateRef);
-    const latestRaw = snap.val();
-    if(latestRaw){
-      const merged = mergeStateForSave(migrateCoreState(latestRaw), {staff:state.staff, years:state.years}, lastServerCore);
-      state.staff = merged.staff;
-      state.years = merged.years;
-    }
-  }catch(e){
-    console.error("保存前の再取得に失敗。手元のデータでそのまま保存します", e);
-  }
-  state.updatedAt = new Date().toISOString();
-  try{
-    await set(stateRef, { staff: state.staff, years: state.years, updatedAt: state.updatedAt });
-    lastServerCore = JSON.parse(JSON.stringify({staff: state.staff, years: state.years}));
+    const res = await runTransaction(stateRef, (cur)=>{
+      const latest = cur ? migrateCoreState(JSON.parse(JSON.stringify(cur))) : null;
+      const merged = latest ? mergeStateForSave(latest, localCore, baseCore) : localCore;
+      return { staff: merged.staff, years: merged.years, updatedAt: new Date().toISOString() };
+    }, {applyLocally:false});
+    if(!res.committed) throw new Error("not committed");
+    const server = migrateCoreState(JSON.parse(JSON.stringify(res.snapshot.val())));
+    // 保存中にさらに手元で変えた分は残しつつ、保存結果(他端末の変更を含む)を取り込む
+    const nextStaff = merge3(localCore.staff, state.staff, server.staff);
+    syncStaffInPlace(JSON.parse(JSON.stringify(nextStaff)));
+    state.years = Array.from(new Set([...(server.years||[]), ...(state.years||[])])).sort();
+    state.updatedAt = server.updatedAt;
+    lastServerCore = JSON.parse(JSON.stringify({staff: server.staff, years: server.years}));
+    refreshEditBaselines();
   }catch(e){
     console.error("save failed", e);
-    showToast("保存に失敗しました");
+    showToast("保存に失敗しました。通信状況を確認してもう一度保存してください");
     return;
   }
 
   // ---- 変更履歴(別パス。頻繁に増減するので本体と分けて保存している) ----
-  const historyChangedLocally = JSON.stringify(lastServerHistory||[]) !== JSON.stringify(state.history||[]);
-  if(historyChangedLocally){
+  const localHistory = JSON.parse(JSON.stringify(state.history||[]));
+  const baseHistory = lastServerHistory || [];
+  if(!sameVal(localHistory, baseHistory)){
     try{
-      const histSnap = await get(historyRef);
-      const latestHistory = Array.isArray(histSnap.val()) ? histSnap.val() : [];
-      state.history = mergeHistoryForSave(latestHistory, state.history, lastServerHistory);
-      await set(historyRef, state.history);
-      lastServerHistory = JSON.parse(JSON.stringify(state.history));
+      const res = await runTransaction(historyRef, (cur)=>
+        mergeHistoryForSave(Array.isArray(cur) ? cur : [], localHistory, baseHistory)
+      , {applyLocally:false});
+      if(res.committed){
+        const server = Array.isArray(res.snapshot.val()) ? res.snapshot.val() : [];
+        state.history = mergeHistoryForSave(server, state.history, localHistory);
+        lastServerHistory = JSON.parse(JSON.stringify(server));
+      }
     }catch(e){
       console.error("history save failed", e);
     }
@@ -1195,7 +1233,72 @@ if(narrowQuery){
 }
 applyDisplayMode();
 
+/* 再描画(他端末の更新の反映など)で画面を作り直すと、表の横・縦スクロールやページ位置、
+   開いていた折りたたみが初期状態に戻ってしまう。同じ画面を描き直すときは、それらを覚えておいて戻す。 */
+const SCROLL_BOX_SELECTOR = '.table-wrap, [style*="overflow"]';
+let lastRenderedView = null;
+function captureViewState(){
+  const main = document.getElementById("main");
+  const nav = document.getElementById("tabs");
+  return {
+    winX: window.scrollX, winY: window.scrollY,
+    navLeft: nav ? nav.scrollLeft : 0,
+    boxes: [...main.querySelectorAll(SCROLL_BOX_SELECTOR)].map(el=>[el.scrollLeft, el.scrollTop]),
+    details: [...main.querySelectorAll("details")].map(d=>d.open),
+  };
+}
+function restoreViewState(v){
+  const main = document.getElementById("main");
+  main.querySelectorAll("details").forEach((d,i)=>{ if(i < v.details.length) d.open = v.details[i]; });
+  main.querySelectorAll(SCROLL_BOX_SELECTOR).forEach((el,i)=>{
+    if(i >= v.boxes.length) return;
+    el.scrollLeft = v.boxes[i][0];
+    el.scrollTop = v.boxes[i][1];
+  });
+  const nav = document.getElementById("tabs");
+  if(nav) nav.scrollLeft = v.navLeft;
+  window.scrollTo(v.winX, v.winY);
+}
+/* スタッフのオブジェクトを作り替えずに中身だけ更新する。
+   評価入力などの画面は表示中のオブジェクトを直接書き換えているため、作り替えると入力が宙に浮いてしまう */
+function syncInto(target, src){
+  Object.keys(target).forEach(k=>{ if(!(k in src)) delete target[k]; });
+  Object.keys(src).forEach(k=>{
+    if(isPlainObj(target[k]) && isPlainObj(src[k])) syncInto(target[k], src[k]);
+    else target[k] = src[k];
+  });
+}
+function syncStaffInPlace(newStaff){
+  const byId = new Map(state.staff.map(s=>[s.id, s]));
+  state.staff = newStaff.map(ns=>{
+    const cur = byId.get(ns.id);
+    if(!cur) return ns;
+    syncInto(cur, ns);
+    return cur;
+  });
+}
+/* 他の端末の更新で描き直すとき、文字を入力している途中なら入力が消えないよう、入力が終わるまで待つ */
+let typedSinceRender = false;
+let pendingRender = false;
+function isTextField(el){
+  if(!el) return false;
+  if(el.tagName === "TEXTAREA") return true;
+  return el.tagName === "INPUT" && !["checkbox","radio","range","button","submit","file"].includes(el.type);
+}
+function requestRender(){
+  if(typedSinceRender || isTextField(document.activeElement)){ pendingRender = true; return; }
+  render();
+}
 function render(){
+  typedSinceRender = false;
+  pendingRender = false;
+  const viewKey = `${activeTab}|${selectedYear}`;
+  const keepView = firstLoadDone && lastRenderedView === viewKey ? captureViewState() : null;
+  renderView();
+  lastRenderedView = `${activeTab}|${selectedYear}`;
+  if(keepView && lastRenderedView === viewKey) restoreViewState(keepView);
+}
+function renderView(){
   renderTabs();
   applyDefaultYearAndPeriod();
   const topSlot = document.getElementById("top-right-slot");
@@ -1540,6 +1643,21 @@ let nineboxFilter = "all"; // all | hall | kitchen
 const CAT_CLASS = {kitchen:"cat-kitchen", hall:"cat-hall", special:"cat-special", shift:"cat-shift", attitude:"cat-attitude"};
 const editSnapshots = {}; // key: `${staffId}:${period}` -> 直近保存時点のperiodDataのコピー(履歴の差分計算用)
 function snapKey(staffId, period){ return `${staffId}:${period}`; }
+const editSnapshotMeta = {}; // key -> {staffId, year, period}
+/* サーバー上の(=最後に全員で共有された)その期間のデータ */
+function serverPeriod(staffId, year, period){
+  const s = (lastServerCore?.staff||[]).find(x=>x.id===staffId);
+  const pd = s?.yearData?.[year]?.[period];
+  return pd ? JSON.parse(JSON.stringify(pd)) : null;
+}
+/* 他の端末の保存を取り込んだ後、評価入力の「変更前」の基準をサーバーの最新値に合わせる。
+   (合わせないと、他の人の変更まで自分の変更として履歴に残ったり、「保存せず移動」で他の人の変更を巻き戻してしまう) */
+function refreshEditBaselines(){
+  Object.entries(editSnapshotMeta).forEach(([k, m])=>{
+    const sp = serverPeriod(m.staffId, m.year, m.period);
+    if(sp) editSnapshots[k] = sp;
+  });
+}
 function clonePeriod(p){ return JSON.parse(JSON.stringify(p)); }
 
 function renderEntry(){
@@ -1577,7 +1695,10 @@ function renderEntry(){
   if(!staffObj.yearData[selectedYear]) staffObj.yearData[selectedYear] = emptyPeriods();
   const periodData = staffObj.yearData[selectedYear][entrySelectedPeriod];
   const key = snapKey(staffObj.id, selectedYear+entrySelectedPeriod);
-  if(!editSnapshots[key]) editSnapshots[key] = clonePeriod(periodData);
+  if(!editSnapshots[key]){
+    editSnapshots[key] = serverPeriod(staffObj.id, selectedYear, entrySelectedPeriod) || clonePeriod(periodData);
+    editSnapshotMeta[key] = {staffId: staffObj.id, year: selectedYear, period: entrySelectedPeriod};
+  }
   const locked = !!periodData.confirmed;
   leaveGuard = {
     save: ()=>{
@@ -1586,7 +1707,7 @@ function renderEntry(){
       return saveState();
     },
     discard: ()=>{
-      const snap = clonePeriod(editSnapshots[key]);
+      const snap = serverPeriod(staffObj.id, selectedYear, entrySelectedPeriod) || clonePeriod(editSnapshots[key]);
       Object.keys(periodData).forEach(k=> delete periodData[k]);
       Object.assign(periodData, snap);
     },
@@ -2890,7 +3011,7 @@ function renderShifts(){
         }
         const payload = { ...parsed, uploadedAt: new Date().toISOString() };
         await set(ref(db, `stores/${STORE_ID}/shifts/${targetDate}`), payload);
-        await set(ref(db, `stores/${STORE_ID}/shiftDates/${targetDate}`), true);
+        await set(ref(db, `stores/${STORE_ID}/shiftDates/${targetDate}`), Date.now()); // 取り込んだ時刻(他端末が再取り込みに気づけるように)
         shiftDataCache[targetDate] = payload;
         if(shiftDateListCache !== null && !shiftDateListCache.includes(targetDate)){
           shiftDateListCache.push(targetDate);
@@ -3596,7 +3717,7 @@ function renderMyPage(){
   if(!unsaved) myGoalSnapshot = pd.selfGoal || "";
   leaveGuard = {
     save: ()=> saveState(),
-    discard: ()=>{ pd.selfGoal = myGoalSnapshot; },
+    discard: ()=>{ const sp = serverPeriod(me.id, selectedYear, myPagePeriod); pd.selfGoal = sp ? (sp.selfGoal||"") : myGoalSnapshot; },
   };
   const goalSetCard = document.createElement("div");
   goalSetCard.className = "card";
@@ -3645,7 +3766,7 @@ function renderMySelfEval(){
   if(!unsaved) selfEvalSnapshot = JSON.parse(JSON.stringify(pd.selfScores)); // 「保存せず移動」で戻す先
   leaveGuard = {
     save: ()=> saveState(), // 提出はせず、下書きとして保存
-    discard: ()=>{ pd.selfScores = JSON.parse(JSON.stringify(selfEvalSnapshot)); },
+    discard: ()=>{ const sp = serverPeriod(me.id, selectedYear, mySelfPeriod); pd.selfScores = sp?.selfScores ? sp.selfScores : JSON.parse(JSON.stringify(selfEvalSnapshot)); },
   };
 
   if(pd.selfSubmitted){
@@ -3930,6 +4051,14 @@ function startApp(){
   mainEl.addEventListener("focusin", (e)=>{
     if(["INPUT","SELECT","TEXTAREA"].includes(e.target.tagName)) editingForm = true;
   });
+  mainEl.addEventListener("input", (e)=>{ if(isTextField(e.target)) typedSinceRender = true; });
+  // プルダウンやチェックを変えた直後に保存・描き直しをする操作は、その処理の中でrender()が呼ばれて解除される。
+  // (capture段階で先に立てるので、後からrender()で正しく解除される)
+  mainEl.addEventListener("change", (e)=>{ if(["SELECT","INPUT"].includes(e.target.tagName)) typedSinceRender = true; }, true);
+  // 入力欄から離れたとき、待たせていた描き直しを行う(書きかけの文字が残っている場合は、次の操作まで待つ)
+  mainEl.addEventListener("focusout", ()=>{
+    setTimeout(()=>{ if(pendingRender && !typedSinceRender && !isTextField(document.activeElement)) render(); }, 0);
+  });
 
   // Firebaseの接続状態そのものを監視
   onValue(ref(db, ".info/connected"), (snap)=>{
@@ -3960,13 +4089,20 @@ function startApp(){
       }
       return;
     }
-    if(editingForm && firstLoadDone){
-      return; // 編集中は他人の更新の取り込みを見送る(自分の未保存の変更を守る)
-    }
     const migrated = migrateCoreState(val);
-    const incoming = JSON.stringify({staff: migrated.staff, years: migrated.years});
-    if(firstLoadDone && incoming === JSON.stringify({staff: state.staff, years: state.years})){
-      lastServerCore = JSON.parse(incoming); // 内容が手元と同じ(=自分の保存の反映)なので、再描画しない
+    if(firstLoadDone){
+      // 手元の未保存の変更(評価入力中の点数など)は残したまま、他の端末の変更だけを取り込む
+      const latestCore = {staff: migrated.staff, years: migrated.years};
+      const mergedStaff = merge3(lastServerCore?.staff, state.staff, latestCore.staff);
+      const mergedYears = Array.from(new Set([...(latestCore.years||[]), ...(state.years||[])])).sort();
+      const changed = !sameVal(mergedStaff, state.staff) || !sameVal(mergedYears, state.years);
+      syncStaffInPlace(JSON.parse(JSON.stringify(mergedStaff)));
+      state.years = mergedYears;
+      state.updatedAt = migrated.updatedAt;
+      lastServerCore = JSON.parse(JSON.stringify(latestCore));
+      refreshEditBaselines();
+      currentPersonName = resolveCurrentPersonName();
+      if(changed) requestRender(); // 自分の保存が戻ってきただけなら描き直さない
       return;
     }
     state.staff = migrated.staff;
@@ -3976,6 +4112,23 @@ function startApp(){
     stateLoaded = true;
     currentPersonName = resolveCurrentPersonName();
     if(firstLoadDone) render(); else tryFirstRender();
+  });
+
+  // シフトの日付一覧をリアルタイム購読。他の端末で取り込み・再取り込み・削除があったら、
+  // 手元に持っている古いシフトデータを捨てて取り直す
+  let shiftDateVersions = null;
+  onValue(ref(db, `stores/${STORE_ID}/shiftDates`), (snap)=>{
+    const val = snap.val() || {};
+    const prev = shiftDateVersions;
+    shiftDateVersions = val;
+    if(prev === null) return; // 初回は一覧を読み込むだけ(画面側で必要な時に取得する)
+    let changed = false;
+    new Set([...Object.keys(prev), ...Object.keys(val)]).forEach(d=>{
+      if(prev[d] !== val[d]){ delete shiftDataCache[d]; changed = true; }
+    });
+    if(!changed) return;
+    shiftDateListCache = Object.keys(val).sort();
+    if(["shifts","ninebox"].includes(activeTab)) requestRender();
   });
 
   // 変更履歴を別パスでリアルタイム購読(本体とは独立して増減する)
@@ -3991,13 +4144,19 @@ function startApp(){
         }
         return;
       }
-      if(editingForm && firstLoadDone){
+      const latestHistory = Array.isArray(val) ? val : [];
+      if(firstLoadDone){
+        const merged = mergeHistoryForSave(latestHistory, state.history, lastServerHistory);
+        const changed = !sameVal(merged, state.history);
+        state.history = merged;
+        lastServerHistory = JSON.parse(JSON.stringify(latestHistory));
+        if(changed) requestRender();
         return;
       }
-      state.history = Array.isArray(val) ? val : [];
+      state.history = latestHistory;
       lastServerHistory = JSON.parse(JSON.stringify(state.history));
       historyLoaded = true;
-      if(firstLoadDone) render(); else tryFirstRender();
+      tryFirstRender();
     });
   });
 }
