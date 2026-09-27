@@ -334,6 +334,12 @@ const db = getDatabase(fbApp);
    ============================================================== */
 const DEFAULT_STORE_ID = "gaisenmon"; // ← 千葉NT店。他店舗にコピーする時はここだけ変更する
 const STORE_ID = new URLSearchParams(window.location.search).get("store") || DEFAULT_STORE_ID;
+/* 画面に出す店舗名。店舗を増やすときはここに1行足す(載っていない店舗はIDをそのまま表示) */
+const STORE_INFO = {
+  gaisenmon: { name:"凱旋門千葉NT店", short:"千葉NT店" },
+};
+const STORE_NAME  = STORE_INFO[STORE_ID]?.name  || STORE_ID;
+const STORE_SHORT = STORE_INFO[STORE_ID]?.short || "店舗";
 const stateRef = ref(db, `stores/${STORE_ID}/ats/state`); // ホール運営システムの stores/${STORE_ID}/state とは別パス
 const historyRef = ref(db, `stores/${STORE_ID}/ats/history`); // 変更履歴は増減が激しいので本体とは別パスに分離
 const auth = getAuth(fbApp);
@@ -549,7 +555,34 @@ async function ensureDailyBackup(){
     await set(backupRef(key), {...res.snapshot.val(), staff: cur.staff, years: cur.years, staffCount: Array.isArray(cur.staff) ? cur.staff.length : 0});
     await set(backupIndexRef(key), {...res.snapshot.val(), staffCount: Array.isArray(cur.staff) ? cur.staff.length : 0});
     await pruneBackups();
+    await archiveOldHistory();
   }catch(e){ console.error("毎日のバックアップに失敗", e); }
+}
+/* 変更履歴は直近1年分だけ ats/history に置き、それより前は ats/historyArchive/{年} に移す。
+   普段は保管分を読み込まないので、年数がたっても重くならない。消すわけではない。 */
+const HISTORY_KEEP_DAYS = 365;
+const historyArchiveRef = year => ref(db, `stores/${STORE_ID}/ats/historyArchive${year ? "/"+year : ""}`);
+async function archiveOldHistory(){
+  try{
+    const limit = new Date(Date.now() - HISTORY_KEEP_DAYS*24*3600*1000).toISOString();
+    const snap = await get(historyRef);
+    const cur = Array.isArray(snap.val()) ? snap.val() : [];
+    const old = cur.filter(h=> h && h.ts && h.ts < limit);
+    if(old.length===0) return;
+    // 1) 年ごとの保管場所に足す(同じidは重ねない)
+    const byYear = {};
+    old.forEach(h=>{ const y = h.ts.slice(0,4); (byYear[y] ||= []).push(h); });
+    for(const [y, list] of Object.entries(byYear)){
+      await runTransaction(historyArchiveRef(y), (arc)=>{
+        const base = Array.isArray(arc) ? arc : [];
+        const ids = new Set(base.map(x=>x.id));
+        return [...base, ...list.filter(x=>!ids.has(x.id))].sort((a,b)=> (b.ts||"").localeCompare(a.ts||""));
+      }, {applyLocally:false});
+    }
+    // 2) 保管できたものを本体から外す
+    const oldIds = new Set(old.map(h=>h.id));
+    await runTransaction(historyRef, (h)=> (Array.isArray(h) ? h : []).filter(x=> !oldIds.has(x.id)), {applyLocally:false});
+  }catch(e){ console.error("変更履歴の保管に失敗", e); }
 }
 async function pruneBackups(){
   const snap = await get(backupIndexRef());
@@ -576,7 +609,7 @@ function migrateCoreState(s){
   s.staff.forEach(st=>{
     if(!st.status){ st.status = st.active===false ? "resigned" : "active"; }
     if(st.isEvaluator === undefined){ st.isEvaluator = EVALUATOR_SEED_NAMES.some(n=>st.name.includes(n)); }
-    st.isEvaluatee = st.employType !== "社員"; // 被評価者かどうか。社員は別の評価指標のため常に対象外(評価データはその時点の値のまま残る)
+    st.isEvaluatee = st.employType !== "社員" && !st.isSystemAdmin; // 被評価者かどうか。社員(別の評価指標のため)とシステム管理者は常に対象外(評価データはその時点の値のまま残る)
     if(st.isAdmin === undefined){ st.isAdmin = (st.employType === "社員") || st.name === "木内 健太"; } // 管理者かどうか。既存の社員+木内さんは自動でtrue
     if(st.hasLogin === undefined){ st.hasLogin = false; }
     if(!Array.isArray(st.growthNotes)) st.growthNotes = [];
@@ -609,7 +642,17 @@ function isBeforeHire(hireDate, fy, period){
   const end = periodEndDate(fy, period);
   return !!(hireDate && end && hireDate > end);
 }
-function defaultCoreState(){ return { staff: seedStaff(), years: [INITIAL_YEAR], updatedAt: null }; }
+/* 新しい店舗を初めて開いたときの初期データ。凱旋門千葉NT店は元の一覧、それ以外の店舗は
+   システム管理者(木内)1人だけで始め、その後その店の社員・本社社員を追加してもらう */
+function defaultCoreState(){
+  if(STORE_ID === "gaisenmon") return { staff: seedStaff(), years: [INITIAL_YEAR], updatedAt: null };
+  const { fiscalYear } = computeCurrentPeriodDefault();
+  return { staff: [{
+    id: "sys-210107", code: "210107", name: "木内 健太", employType: "アルバイト", affiliation: "両方", hireDate: null,
+    status: "active", isEvaluator: false, isEvaluatee: false, isAdmin: true, isSystemAdmin: true,
+    hasLogin: true, growthNotes: [], assignedEvaluatorId: "", yearData: { [fiscalYear]: emptyPeriods() },
+  }], years: [fiscalYear], updatedAt: null };
+}
 
 /* 直近にサーバーから受け取った状態(=自分がまだ書き込んでいない基準点)。
    これと今の手元の state を比べることで「自分が実際に何を触ったか」を判定する。 */
@@ -745,7 +788,7 @@ function setSyncStatus(ok){
   const dot = document.getElementById("sync-dot");
   const lbl = document.getElementById("sync-label");
   dot.classList.toggle("off", !ok);
-  lbl.textContent = (ok ? "全員と同期中(リアルタイム)" : "オフライン") + ` ・ 店舗: ${STORE_ID}`;
+  lbl.textContent = (ok ? "全員と同期中(リアルタイム)" : "オフライン") + ` ・ 店舗: ${STORE_NAME}`;
 }
 
 /* ---- ログインコードから「今ログインしているのが誰か」を自動判定する ---- */
@@ -2527,7 +2570,7 @@ function renderPersonal(){
   // 推移グラフ + 店舗平均とのレーダーチャート比較
   const chartCard = document.createElement("div");
   chartCard.className = "card";
-  chartCard.innerHTML = `<div style="font-weight:800;font-size:15px;margin-bottom:14px;">評価の推移と千葉NT店平均との比較</div>`;
+  chartCard.innerHTML = `<div style="font-weight:800;font-size:15px;margin-bottom:14px;">評価の推移と${STORE_SHORT}平均との比較</div>`;
 
   const chartGrid = document.createElement("div");
   chartGrid.className = "chart-grid";
@@ -2563,7 +2606,7 @@ function renderPersonal(){
   radarLegend.style.cssText = "display:flex;gap:16px;justify-content:center;margin-top:4px;font-size:11.5px;color:var(--muted);flex-wrap:wrap;";
   radarLegend.innerHTML = `
     <span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:12px;height:12px;background:var(--ember);border-radius:3px;display:inline-block;"></span>${staffObj.name}</span>
-    <span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:16px;height:0;border-top:2px dashed var(--muted);display:inline-block;"></span>千葉NT店平均</span>
+    <span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:16px;height:0;border-top:2px dashed var(--muted);display:inline-block;"></span>${STORE_SHORT}平均</span>
   `;
   radarBox.appendChild(radarLegend);
   chartGrid.appendChild(radarBox);
@@ -3430,7 +3473,7 @@ const STATUS_META = {
       editingStaff.employType = form.querySelector(".se-type").value;
       editingStaff.affiliation = form.querySelector(".se-aff").value;
       editingStaff.hireDate = form.querySelector(".se-hire").value || null;
-      editingStaff.isEvaluatee = editingStaff.employType !== "社員";
+      editingStaff.isEvaluatee = editingStaff.employType !== "社員" && !editingStaff.isSystemAdmin;
       const newStatus = form.querySelector(".se-status").value;
       if(newStatus !== editingStaff.status){
         logGenericChange(editingStaff.name, "状態", STATUS_META[editingStaff.status]?.label || editingStaff.status, STATUS_META[newStatus]?.label || newStatus);
@@ -4287,7 +4330,56 @@ function renderHistory(){
     card.appendChild(note);
   }
   wrap.appendChild(card);
+  wrap.appendChild(renderHistoryArchiveCard());
   return wrap;
+}
+/* 1年より前の変更履歴(保管分)。見たいときだけ年を選んで読み込む。閲覧のみ */
+let historyArchiveYears = null;   // 保管されている年の一覧
+let historyArchiveOpen = null;    // 表示中の年
+let historyArchiveCache = {};     // {年: 履歴の配列}
+function renderHistoryArchiveCard(){
+  const card = document.createElement("div");
+  card.className = "card";
+  card.innerHTML = `<div class="home-card-title">1年より前の変更履歴</div><div class="home-card-sub">1年より前の履歴は、画面を軽くするため別に保管しています。見たい年を選ぶと読み込みます。</div>`;
+  if(historyArchiveYears === null){
+    const b = document.createElement("button");
+    b.className = "btn-ghost"; b.textContent = "保管されている年を確認";
+    b.onclick = ()=>{ get(historyArchiveRef()).then(s=>{ const v = s.val() || {}; historyArchiveYears = Object.keys(v).sort().reverse(); Object.entries(v).forEach(([y,l])=>{ historyArchiveCache[y] = Array.isArray(l) ? l : []; }); render(); }); };
+    card.appendChild(b);
+    return card;
+  }
+  if(historyArchiveYears.length===0){ card.insertAdjacentHTML("beforeend", `<div class="empty">保管されている履歴はありません</div>`); return card; }
+  const row = document.createElement("div");
+  row.className = "btn-group";
+  historyArchiveYears.forEach(y=>{
+    const b = document.createElement("button");
+    b.textContent = `${y}年(${historyArchiveCache[y]?.length ?? 0}件)`;
+    b.className = historyArchiveOpen===y ? "active" : "";
+    b.onclick = ()=>{ historyArchiveOpen = historyArchiveOpen===y ? null : y; render(); };
+    row.appendChild(b);
+  });
+  card.appendChild(row);
+  if(historyArchiveOpen){
+    const list = historyArchiveCache[historyArchiveOpen] || [];
+    const tw = document.createElement("div");
+    tw.className = "table-wrap"; tw.style.marginTop = "12px";
+    const table = document.createElement("table");
+    table.innerHTML = `<thead><tr><th>日時</th><th>操作者</th><th class="name-col">スタッフ</th><th>年度</th><th>評価時期</th><th>項目</th><th>変更前</th><th></th><th>変更後</th></tr></thead>`;
+    const tb = document.createElement("tbody");
+    list.forEach(en=>{
+      const tr = document.createElement("tr");
+      [new Date(en.ts).toLocaleString("ja-JP",{year:"numeric",month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}), en.user, en.staffName, en.year || "-",
+       PERIOD_INFO[en.period] ? periodName(en.period) : (en.period || "-"), en.field, en.oldValue, "→", en.newValue].forEach((v,i)=>{
+        const td = document.createElement("td");
+        if(i===2) td.className = "name-col";
+        td.textContent = v ?? "";
+        tr.appendChild(td);
+      });
+      tb.appendChild(tr);
+    });
+    table.appendChild(tb); tw.appendChild(table); card.appendChild(tw);
+  }
+  return card;
 }
 
 /* ============================== 起動(ログイン後にリアルタイム購読を開始) ============================== */
