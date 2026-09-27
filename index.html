@@ -848,7 +848,8 @@ function evalStatus(staffObj, year, period){
   if(!pd) return "todo";
   if(pd.exempt) return "skip";
   if(pd.confirmed) return "done";
-  const hasInput = Object.values(pd.scores||{}).some(v=>v>0) || (pd.bonus||0)>0 || (pd.comment||"").trim() || (pd.evaluatorGoal||"").trim();
+  // saved: 評価者が評価入力で「保存」した印。新人で全項目0点のままでも、保存すれば入力済みとして扱う
+  const hasInput = pd.saved || Object.values(pd.scores||{}).some(v=>v>0) || (pd.bonus||0)>0 || (pd.comment||"").trim() || (pd.evaluatorGoal||"").trim();
   return hasInput ? "doing" : "todo";
 }
 const EVAL_STATUS_LABEL = {todo:"未入力", doing:"入力中", done:"確定済み", skip:"対象外"};
@@ -1197,6 +1198,7 @@ function diffAndLog(staffObj, year, period, before, after){
   if((before.evaluatorGoal || "") !== (after.evaluatorGoal || "")) entries.push({field:"目標設定", oldValue:"(変更前あり)", newValue:"(変更後あり)"});
   if(!!before.confirmed !== !!after.confirmed) entries.push({field:"ステータス", oldValue: before.confirmed ? "確定" : "編集中", newValue: after.confirmed ? "確定" : "編集中"});
   if(!!before.exempt !== !!after.exempt) entries.push({field:"評価対象外", oldValue: before.exempt ? "対象外" : "対象内", newValue: after.exempt ? "対象外" : "対象内"});
+  if(entries.length===0 && !before.saved && after.saved) entries.push({field:"入力", oldValue:"未入力", newValue:"入力済み(点数の変更なし)"});
   if(entries.length===0) return;
   const ts = new Date().toISOString();
   entries.forEach(e=>{
@@ -1937,6 +1939,7 @@ function renderEntry(){
   const locked = !!periodData.confirmed;
   leaveGuard = {
     save: ()=>{
+      periodData.saved = true;
       diffAndLog(staffObj, selectedYear, entrySelectedPeriod, editSnapshots[key], periodData);
       editSnapshots[key] = clonePeriod(periodData);
       return saveState();
@@ -2143,6 +2146,7 @@ function renderEntry(){
     saveBtn.textContent = "保存";
     saveBtn.onclick = ()=>{
       clearDirty();
+      periodData.saved = true;
       diffAndLog(staffObj, selectedYear, entrySelectedPeriod, editSnapshots[key], periodData);
       editSnapshots[key] = clonePeriod(periodData);
       saveState();
@@ -2155,6 +2159,7 @@ function renderEntry(){
         clearDirty();
         const before = clonePeriod(periodData);
         periodData.confirmed = true;
+        periodData.saved = true;
         diffAndLog(staffObj, selectedYear, entrySelectedPeriod, before, periodData);
         editSnapshots[key] = clonePeriod(periodData);
         saveState();
@@ -2167,6 +2172,7 @@ function renderEntry(){
     saveNextBtn.textContent = "保存して次へ";
     saveNextBtn.onclick = ()=>{
       clearDirty();
+      periodData.saved = true;
       diffAndLog(staffObj, selectedYear, entrySelectedPeriod, editSnapshots[key], periodData);
       editSnapshots[key] = clonePeriod(periodData);
       saveState();
