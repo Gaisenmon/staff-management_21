@@ -258,6 +258,23 @@
   .st-chip.doing{background:var(--amber-bg);color:var(--amber);}
   .st-chip.done{background:var(--green-bg);color:var(--green);}
   .st-chip.skip{background:var(--gray-bg);color:var(--gray-ink);}
+  /* 新着の目印 */
+  .nb-dot{position:absolute;top:5px;right:7px;width:9px;height:9px;border-radius:50%;background:#E5484D;box-shadow:0 0 0 2px var(--charcoal);pointer-events:none;}
+  .nb-count{position:absolute;top:2px;right:4px;min-width:17px;height:17px;padding:0 4px;box-sizing:border-box;border-radius:9px;background:#E5484D;color:#fff;font-size:10.5px;font-weight:800;line-height:17px;text-align:center;box-shadow:0 0 0 2px var(--charcoal);pointer-events:none;}
+  nav button.active .nb-dot, nav button.active .nb-count{box-shadow:0 0 0 2px var(--cream);}
+  body.mobile-mode nav.general-nav button.active .nb-dot, body.mobile-mode nav.general-nav button.active .nb-count{box-shadow:0 0 0 2px var(--ember);}
+  .view-switch button{position:relative;}
+  nav:not(.general-nav) button.has-badge{padding-right:24px;}
+  nav:not(.general-nav) button .nb-count{top:50%;right:4px;margin-top:-9px;}
+  .view-switch .nb-dot{top:2px;right:3px;}
+  .new-tag{display:inline-block;font-size:10px;font-weight:800;line-height:1;padding:3px 6px;border-radius:10px;background:#E5484D;color:#fff;letter-spacing:.3px;vertical-align:middle;white-space:nowrap;}
+  .new-tag.upd{background:var(--amber, #B7791F);}
+  .period-btn{position:relative;}
+  .period-btn .new-tag{position:absolute;top:-8px;right:-6px;padding:2px 5px;font-size:9px;}
+  .self-chip{flex:none;font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:20px;white-space:nowrap;background:var(--gray-bg);color:var(--gray-ink);}
+  .self-chip.on{background:#E6EEF8;color:#2D5B8A;}
+  .news-banner{display:flex;align-items:center;gap:8px;background:#FDECEC;color:#9B2C2C;border-radius:8px;padding:10px 14px;font-size:13px;font-weight:800;margin-bottom:14px;}
+  .news-banner.upd{background:var(--amber-bg);color:var(--amber);}
   .progress-bar{height:8px;border-radius:8px;background:var(--gray-bg);overflow:hidden;margin:6px 0 2px;}
   .progress-bar > div{height:100%;background:var(--green);}
   .home-task{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px;border-radius:10px;background:var(--cream, #FBF6EE);border:1px solid var(--line);margin-bottom:8px;}
@@ -1257,9 +1274,14 @@ function renderViewSwitch(){
   box.innerHTML = "";
   box.style.display = canUseSelfView() ? "" : "none";
   if(!canUseSelfView()) return;
+  const me = currentStaffObj();
+  const staffNews = Object.keys(resultNews(me, selectedYear)).length + unseenNotes(me).length;
+  const evalNews = homePeriod ? selfNews(me, selectedYear, homePeriod).length : 0;
   [{self:false, label:"評価者メニュー"}, {self:true, label:"自分の評価"}].forEach(o=>{
     const b = document.createElement("button");
     b.textContent = o.label;
+    const showDot = (usesAdminView() === o.self) && (o.self ? staffNews : evalNews) > 0; // 今いない側に新着があるときだけ
+    if(showDot) b.insertAdjacentHTML("beforeend", `<span class="nb-dot"></span>`);
     b.className = (usesAdminView() !== o.self) ? "active" : "";
     b.onclick = ()=>{
       if(b.classList.contains("active")) return;
@@ -1285,15 +1307,17 @@ function renderTabs(){
   if(!tabsToUse.some(t=>t.id===activeTab)){
     activeTab = tabsToUse[0].id;
   }
+  const badges = tabBadges(adminView);
   tabsToUse.forEach(t=>{
     const b = document.createElement("button");
-    b.innerHTML = `<span class="tl">${t.label}</span><span class="ts">${t.short || t.label}</span>`;
-    b.className = t.id===activeTab ? "active" : "";
+    const bd = badges[t.id];
+    b.innerHTML = `<span class="tl">${t.label}</span><span class="ts">${t.short || t.label}</span>` + (bd===true ? `<span class="nb-dot"></span>` : bd ? `<span class="nb-count">${bd>99?"99+":bd}</span>` : "");
+    b.className = (t.id===activeTab ? "active" : "") + (bd ? " has-badge" : "");
     b.onclick = ()=> guardedNavigate(()=>{ editingForm = false; topMenuOpen = false; activeTab = t.id; render(); });
     nav.appendChild(b);
   });
 }
-function renderPeriodButtons(selected, onSelect){
+function renderPeriodButtons(selected, onSelect, marks){
   const row = document.createElement("div");
   row.className = "period-row";
   const lbl = document.createElement("span");
@@ -1305,7 +1329,8 @@ function renderPeriodButtons(selected, onSelect){
   PERIODS.forEach(p=>{
     const b = document.createElement("button");
     b.className = "period-btn" + (p===selected ? " active" : "");
-    b.innerHTML = `${periodName(p)}<span class="range">${PERIOD_INFO[p].range}</span>`;
+    const mk = marks && marks[p];
+    b.innerHTML = `${periodName(p)}<span class="range">${PERIOD_INFO[p].range}</span>` + (mk ? `<span class="new-tag${mk==="updated"?" upd":""}">${mk==="updated"?"更新":"NEW"}</span>` : "");
     b.title = periodFull(p);
     b.onclick = ()=> onSelect(p);
     group.appendChild(b);
@@ -1473,13 +1498,17 @@ function render(){
   pendingRender = false;
   const viewKey = `${activeTab}|${selectedYear}`;
   const keepView = firstLoadDone && lastRenderedView === viewKey ? captureViewState() : null;
+  seenMarkedInRender = false;
   renderView();
+  if(seenMarkedInRender) renderTabs(); // 画面を開いて既読にした分、タブの目印を付け直す
   lastRenderedView = `${activeTab}|${selectedYear}`;
   if(keepView && lastRenderedView === viewKey) restoreViewState(keepView);
 }
 function renderView(){
-  renderTabs();
   applyDefaultYearAndPeriod();
+  ensureSeenSubscription();
+  if(freshTab !== activeTab){ freshTab = activeTab; freshResults.clear(); freshNoteIds.clear(); }
+  renderTabs();
   const topSlot = document.getElementById("top-right-slot");
   topSlot.innerHTML = "";
   topSlot.appendChild(renderTopRightContent());
@@ -1592,7 +1621,7 @@ function renderDashboard(){
   const catRow = document.createElement("tr");
   catRow.className = "cat-row";
   const metaTh = document.createElement("th");
-  metaTh.colSpan = 4; metaTh.textContent = "";
+  metaTh.colSpan = 5; metaTh.textContent = "";
   catRow.appendChild(metaTh);
   CATEGORIES.forEach(cat=>{
     const th = document.createElement("th");
@@ -1607,7 +1636,7 @@ function renderDashboard(){
 
   const headRow = document.createElement("tr");
   // よく見る情報(氏名・状態・合計)を左に寄せ、氏名は横スクロールしても固定する
-  const STRING_KEYS = ["name","employType","affiliation","evaluator","status"];
+  const STRING_KEYS = ["name","employType","affiliation","evaluator","status","self"];
   const addHeadCols = (cols)=> cols.forEach(mc=>{
     const th = document.createElement("th");
     th.className = mc.key==="name" ? "name-col" : "";
@@ -1616,7 +1645,7 @@ function renderDashboard(){
     th.onclick = ()=> applySort(mc.key, STRING_KEYS.includes(mc.key) ? "string" : "number");
     headRow.appendChild(th);
   });
-  addHeadCols([{key:"name", label:"氏名"}, {key:"status", label:"状態"}, {key:"total", label:"合計点数"}, {key:"bonus", label:"加点"}]);
+  addHeadCols([{key:"name", label:"氏名"}, {key:"status", label:"状態"}, {key:"self", label:"自己評価"}, {key:"total", label:"合計点数"}, {key:"bonus", label:"加点"}]);
   const metaCols = [
     {key:"code", label:"社員CD"}, {key:"employType", label:"雇用区分"},
     {key:"affiliation", label:"所属"}, {key:"tenure", label:"勤続"}, {key:"evaluator", label:"評価者"},
@@ -1651,6 +1680,7 @@ function renderDashboard(){
     else if(s.col==="bonus"){ va = aPeriod.bonus ?? 0; vb = bPeriod.bonus ?? 0; }
     else if(s.col==="status"){ const o={todo:0,doing:1,done:2,skip:3}; va = o[evalStatus(a, selectedYear, dashboardPeriod)]; vb = o[evalStatus(b, selectedYear, dashboardPeriod)]; }
     else if(s.col==="total"){ va = totalScore(aPeriod); vb = totalScore(bPeriod); }
+    else if(s.col==="self"){ va = aPeriod.selfSubmitted ? "1" : "0"; vb = bPeriod.selfSubmitted ? "1" : "0"; }
     else { va = aScores[s.col] ?? 0; vb = bScores[s.col] ?? 0; }
     let cmp;
     if(typeof va === "string"){ cmp = va.localeCompare(vb, "ja"); }
@@ -1662,12 +1692,12 @@ function renderDashboard(){
   exportBtn.textContent = "CSVエクスポート";
   exportBtn.style.cssText = "background:#fff;border:1px solid var(--ember);color:var(--ember-dark);border-radius:20px;padding:6px 16px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;";
   exportBtn.onclick = ()=>{
-    const header = ["氏名","状態","合計点数","加点", ...ALL_ITEMS.map(it=>it.name), "社員CD","雇用区分","所属","勤続","評価者"];
+    const header = ["氏名","状態","自己評価","合計点数","加点", ...ALL_ITEMS.map(it=>it.name), "社員CD","雇用区分","所属","勤続","評価者"];
     const rows = [header];
     sorted.forEach(st=>{
       const period = st.yearData[selectedYear][dashboardPeriod];
       rows.push([
-        st.name, EVAL_STATUS_LABEL[evalStatus(st, selectedYear, dashboardPeriod)], formatTotal(period), period.bonus ?? 0,
+        st.name, EVAL_STATUS_LABEL[evalStatus(st, selectedYear, dashboardPeriod)], period.selfSubmitted ? "提出済み" : "未提出", formatTotal(period), period.bonus ?? 0,
         ...ALL_ITEMS.map(it => period.scores[it.name] ?? 0),
         st.code, st.employType, st.affiliation, computeTenureText(st.hireDate), period.evaluator || "",
       ]);
@@ -1687,6 +1717,7 @@ function renderDashboard(){
     tr.innerHTML = `
       <td class="name-col sm-sticky">${st.name}</td>
       <td><span class="st-chip ${stt}">${EVAL_STATUS_LABEL[stt]}</span></td>
+      <td><span class="self-chip${period.selfSubmitted?" on":""}">${period.selfSubmitted ? "済" : "未"}</span></td>
       <td style="font-weight:800;color:${period.exempt ? "var(--gray-ink)" : "var(--ember-dark)"};">${formatTotal(period)}</td>
       <td>${period.bonus ?? 0}</td>
       ${ALL_ITEMS.map(it=>{
@@ -1955,8 +1986,13 @@ function renderEntry(){
     <span>社員CD: <strong>${staffObj.code}</strong></span>
     <span>雇用区分: <strong>${staffObj.employType}</strong></span>
     <span>評価時期: <strong>${selectedYear}年度 ${periodFull(entrySelectedPeriod)}</strong></span>
+    <span>本人の自己評価: <span class="self-chip${periodData.selfSubmitted?" on":""}">${periodData.selfSubmitted ? "提出済み" : "未提出"}</span></span>
   `;
   card.appendChild(meta);
+  const meNow = currentStaffObj();
+  if(meNow && periodData.selfSubmitted && assignedEvaluatorOf(staffObj)?.id === meNow.id){
+    markSeen("selfs", seenKey(selectedYear, entrySelectedPeriod, staffObj.id), selfPrint(periodData));
+  }
 
   const evaluatorRow = document.createElement("div");
   evaluatorRow.style.cssText = "width:100%;margin-bottom:16px;display:flex;align-items:flex-end;gap:10px;justify-content:space-between;flex-wrap:wrap;";
@@ -2344,7 +2380,7 @@ function buildPersonalRadarSVG(labels, individualPct, avgPct){
    気づいた時に一言残せる、期間に紐付かないタイムライン。マイページ・ATS評価-個人の
    両方から同じ内容を読み書きする(同じstaffObj.growthNotesを共有)。 */
 let editingNoteId = null; // 一言メモの編集中ID(再描画をまたいで保持)
-function renderGrowthNotes(staffObj){
+function renderGrowthNotes(staffObj, opts = {}){
   const card = document.createElement("div");
   card.className = "card";
   card.innerHTML = `<div style="font-weight:800;font-size:15px;margin-bottom:14px;">一言メモ</div>`;
@@ -2392,6 +2428,7 @@ function renderGrowthNotes(staffObj){
         const meta = document.createElement("div");
         meta.style.cssText = "font-size:11px;color:var(--muted);font-weight:700;";
         meta.textContent = `${n.author||""} ・ ${dateStr}`;
+        if(opts.fresh && opts.fresh.has(n.id)) meta.insertAdjacentHTML("afterbegin", `<span class="new-tag" style="margin-right:6px;">NEW</span>`);
         headerRow.appendChild(meta);
         if(isMine){
           const actions = document.createElement("div");
@@ -3704,6 +3741,105 @@ function renderBackupDetail(key, meta){
   return box;
 }
 
+/* ============================== 新着の目印(NEW・赤丸) ==============================
+   「見た」記録は人ごとに stores/.../ats/seen/{スタッフid} に置く。端末をまたいで既読になり、
+   評価データ本体(ats/state)とは別の場所なので、本体の保存・合成(merge3)やバックアップには関わらない。
+     results/{年度|時期}         … 最後に見た自分の結果の指紋(確定後に中身が変わると「更新」になる)
+     notes/{メモid}              … 他の人が書いたメモを見た印
+     selfs/{年度|時期|スタッフid} … (評価者)担当の人の自己評価を見た指紋(出し直すと再びNEW)
+   確定前の評価は本人に見せない仕様なので、結果の通知は「確定済み かつ 自己評価提出済み」になってから。
+   初めて使う人は、その時点の状態をまとめて「見た」扱いにする(過去の分が全部NEWにならないように)。 */
+const seenRef = (id, sub)=> ref(db, `stores/${STORE_ID}/ats/seen/${id}${sub ? "/"+sub : ""}`);
+let seenMarkedInRender = false;
+let mySeen = null;             // 自分の「見た」記録(null=まだ読み込んでいない。その間は何も光らせない)
+let seenSubscribedId = null;
+let freshTab = null;           // 開いている間はNEWを残すための記録(タブを移ると消える)
+const freshResults = new Map(); // 年度|時期 → "new" | "updated"
+const freshNoteIds = new Set();
+function fingerprint(v){
+  const str = canon(v);
+  let h = 5381;
+  for(let i=0;i<str.length;i++) h = ((h<<5) + h + str.charCodeAt(i)) | 0;
+  return (h>>>0).toString(36);
+}
+const seenKey = (...parts)=> parts.join("|");
+function resultVisible(pd){ return !!(pd && pd.confirmed && pd.selfSubmitted && !pd.exempt); }
+function resultPrint(pd){ return fingerprint({scores:pd.scores||{}, bonus:pd.bonus??0, comment:pd.comment||"", evaluatorGoal:pd.evaluatorGoal||""}); }
+function selfPrint(pd){ return fingerprint(pd.selfScores||{}); }
+/* 自分の結果で、まだ見ていないもの { 時期: "new" | "updated" } */
+function resultNews(me, year){
+  const out = {};
+  if(!mySeen || !me || !me.isEvaluatee) return out;
+  PERIODS.forEach(p=>{
+    const pd = me.yearData?.[year]?.[p];
+    if(!resultVisible(pd)) return;
+    const was = mySeen.results?.[seenKey(year, p)];
+    if(was !== resultPrint(pd)) out[p] = was ? "updated" : "new";
+  });
+  return out;
+}
+function othersNotes(me){ return (me?.growthNotes||[]).filter(n=> n.author !== me.name); }
+function unseenNotes(me){ return (mySeen && me) ? othersNotes(me).filter(n=> !mySeen.notes?.[n.id]) : []; }
+/* (評価者)担当の人のうち、自己評価が新しく出た・出し直された人 */
+function selfNews(me, year, period){
+  if(!mySeen || !me) return [];
+  return assigneesOf(me.id).filter(s=>{
+    const pd = s.yearData?.[year]?.[period];
+    return pd && pd.selfSubmitted && mySeen.selfs?.[seenKey(year, period, s.id)] !== selfPrint(pd);
+  });
+}
+function markSeen(group, key, val){
+  const me = currentStaffObj();
+  if(!me || !mySeen) return;
+  if(mySeen[group]?.[key] === val) return;
+  (mySeen[group] = mySeen[group] || {})[key] = val;
+  seenMarkedInRender = true;
+  set(seenRef(me.id, `${group}/${key}`), val).catch(e=> console.error("既読の保存に失敗", e));
+}
+function ensureSeenSubscription(){
+  const me = currentStaffObj();
+  if(!me || seenSubscribedId === me.id) return;
+  seenSubscribedId = me.id;
+  mySeen = null;
+  onValue(seenRef(me.id), (snap)=>{
+    if(currentStaffObj()?.id !== me.id) return;
+    const v = snap.val();
+    if(v === null){ initSeenBaseline(me); return; }
+    const next = {results:{}, notes:{}, selfs:{}, ...v};
+    if(sameVal(next, mySeen)) return; // 自分が付けた既読が戻ってきただけ
+    mySeen = next;
+    if(firstLoadDone) requestRender();
+  });
+}
+function initSeenBaseline(me){
+  const base = {since: new Date().toISOString(), results:{}, notes:{}, selfs:{}};
+  const mine = assigneesOf(me.id);
+  (state.years||[]).forEach(y=> PERIODS.forEach(p=>{
+    const pd = me.yearData?.[y]?.[p];
+    if(resultVisible(pd)) base.results[seenKey(y, p)] = resultPrint(pd);
+    mine.forEach(s=>{ const q = s.yearData?.[y]?.[p]; if(q?.selfSubmitted) base.selfs[seenKey(y, p, s.id)] = selfPrint(q); });
+  }));
+  othersNotes(me).forEach(n=>{ base.notes[n.id] = 1; });
+  mySeen = base;
+  // 別の端末と同時に初回を迎えても、中身は同じ「その時点を見た扱い」なので上書きで問題ない
+  set(seenRef(me.id), base).catch(e=> console.error("既読の初期化に失敗", e));
+  if(firstLoadDone) requestRender();
+}
+/* タブに付ける目印 { タブid: true(丸) | 数 } */
+function tabBadges(adminView){
+  const me = currentStaffObj();
+  if(!me || !mySeen) return {};
+  if(adminView){
+    const n = homePeriod ? selfNews(me, selectedYear, homePeriod).length : 0;
+    return n ? {home: n} : {};
+  }
+  const out = {};
+  if(Object.keys(resultNews(me, selectedYear)).length) out.myPage = true;
+  const nn = unseenNotes(me).length;
+  if(nn) out.myNotes = nn;
+  return out;
+}
+
 /* ============================== ホーム画面 ============================== */
 function menuGrid(items){
   const grid = document.createElement("div");
@@ -3725,10 +3861,10 @@ function openEntryFor(staffId, period){
   render();
   window.scrollTo(0,0);
 }
-function todoRow(staffObj, status, onClick, label){
+function todoRow(staffObj, status, onClick, label, extra){
   const b = document.createElement("button");
   b.className = "todo-row";
-  b.innerHTML = `<span class="nm">${staffObj.name}</span><span class="st-chip ${status}">${label || EVAL_STATUS_LABEL[status]}</span><span class="arrow">›</span>`;
+  b.innerHTML = `<span class="nm">${staffObj.name}</span>${extra||""}<span class="st-chip ${status}">${label || EVAL_STATUS_LABEL[status]}</span><span class="arrow">›</span>`;
   b.onclick = onClick;
   return b;
 }
@@ -3763,8 +3899,15 @@ function renderHomeAdmin(){
     mine.forEach(s=> byStatus[evalStatus(s, selectedYear, homePeriod)].push(s));
     const canConfirm = isCurrentUserAdmin(); // 確定できない評価者は、入力が済めば自分のやることは完了
     const remaining = byStatus.todo.length + (canConfirm ? byStatus.doing.length : 0);
+    const newSelf = new Set(selfNews(me, selectedYear, homePeriod).map(s=>s.id));
+    const submittedCount = mine.filter(s=> s.yearData?.[selectedYear]?.[homePeriod]?.selfSubmitted).length;
+    // 自己評価の提出状況(出した・まだ)と、新しく出た人のNEW
+    const selfExtra = s=>{
+      const on = !!s.yearData?.[selectedYear]?.[homePeriod]?.selfSubmitted;
+      return (newSelf.has(s.id) ? `<span class="new-tag">NEW</span>` : "") + `<span class="self-chip${on?" on":""}">${on ? "自己評価 済" : "自己評価 未"}</span>`;
+    };
     card.innerHTML = `<div class="home-card-title">あなたの担当(${periodName(homePeriod)})</div>
-      <div class="home-card-sub">${mine.length===0 ? "担当が割り当てられていません。" : remaining===0 ? (canConfirm ? `担当${mine.length}人の評価はすべて確定しています。` : `担当${mine.length}人の入力はすべて終わっています。確定は管理者が行います。`) : `担当${mine.length}人のうち、残り${remaining}人です。`}</div>`;
+      <div class="home-card-sub">${mine.length===0 ? "担当が割り当てられていません。" : remaining===0 ? (canConfirm ? `担当${mine.length}人の評価はすべて確定しています。` : `担当${mine.length}人の入力はすべて終わっています。確定は管理者が行います。`) : `担当${mine.length}人のうち、残り${remaining}人です。`}${mine.length ? ` 自己評価の提出は${submittedCount}/${mine.length}人です。` : ""}${newSelf.size ? `<br><strong style="color:#B23A2E;">新しく自己評価を出した人が${newSelf.size}人います。</strong>` : ""}</div>`;
     const groups = canConfirm ? [["todo","未入力"], ["doing","入力中・確定待ち"]] : [["todo","未入力"]];
     groups.forEach(([key,label])=>{
       if(byStatus[key].length===0) return;
@@ -3772,15 +3915,16 @@ function renderHomeAdmin(){
       head.className = "todo-group-head";
       head.textContent = `${label}(${byStatus[key].length})`;
       card.appendChild(head);
-      byStatus[key].forEach(s=> card.appendChild(todoRow(s, key, ()=>openEntryFor(s.id, homePeriod))));
+      byStatus[key].forEach(s=> card.appendChild(todoRow(s, key, ()=>openEntryFor(s.id, homePeriod), null, selfExtra(s))));
     });
     const doneList = canConfirm ? [...byStatus.done, ...byStatus.skip] : [...byStatus.doing, ...byStatus.done, ...byStatus.skip];
     if(doneList.length){
       const det = document.createElement("details");
+      if(doneList.some(s=> newSelf.has(s.id))) det.open = true; // 入力済みの人が自己評価を出し直したときも見落とさない
       det.innerHTML = `<summary class="todo-group-head" style="cursor:pointer;">${canConfirm ? "確定済み・対象外" : "入力済み・確定済み"}(${doneList.length})</summary>`;
       doneList.forEach(s=>{
         const st = evalStatus(s, selectedYear, homePeriod);
-        det.appendChild(todoRow(s, st==="doing" ? "done" : st, ()=>openEntryFor(s.id, homePeriod), st==="doing" ? "入力済み" : null));
+        det.appendChild(todoRow(s, st==="doing" ? "done" : st, ()=>openEntryFor(s.id, homePeriod), st==="doing" ? "入力済み" : null, selfExtra(s)));
       });
       card.appendChild(det);
     }
@@ -3872,11 +4016,22 @@ function renderHomeGeneral(){
     addTask(`${periodFull(homePeriod)}の自己評価がまだです`, "自己評価をする", ()=>{ mySelfPeriod = homePeriod; activeTab = "mySelfEval"; render(); });
   } else if(!pd.confirmed){
     addTask("自己評価は提出済みです。評価者の確定を待っています", null, null, true);
+  } else if(resultNews(me, selectedYear)[homePeriod]){
+    const upd = resultNews(me, selectedYear)[homePeriod] === "updated";
+    addTask(`<span class="new-tag${upd?" upd":""}">${upd?"更新":"NEW"}</span> ${periodName(homePeriod)}の${upd ? "結果が更新されました" : "結果が出ました"}`, "結果を見る", ()=>{ myPagePeriod = homePeriod; activeTab = "myPage"; render(); });
   } else if(!(pd.selfGoal||"").trim()){
     addTask(`${periodName(homePeriod)}の結果が出ました。確認して次回の目標を立てましょう`, "結果を見る", ()=>{ myPagePeriod = homePeriod; activeTab = "myPage"; render(); });
   } else {
     addTask(`${periodName(homePeriod)}はすべて完了しています`, "結果を見る", ()=>{ myPagePeriod = homePeriod; activeTab = "myPage"; render(); }, true);
   }
+  // 今見ている時期以外で出た結果・新しいメモも、ここで知らせる
+  const otherNews = Object.keys(resultNews(me, selectedYear)).filter(p=> p !== homePeriod);
+  otherNews.forEach(p=>{
+    const upd = resultNews(me, selectedYear)[p] === "updated";
+    addTask(`<span class="new-tag${upd?" upd":""}">${upd?"更新":"NEW"}</span> ${periodName(p)}の${upd ? "結果が更新されました" : "結果が出ました"}`, "結果を見る", ()=>{ myPagePeriod = p; activeTab = "myPage"; render(); });
+  });
+  const nn = unseenNotes(me).length;
+  if(nn) addTask(`<span class="new-tag">NEW</span> 新しいメモが${nn}件あります`, "メモを見る", ()=>{ activeTab = "myNotes"; render(); });
   wrap.appendChild(card);
 
   const menuCard = document.createElement("div");
@@ -3906,7 +4061,15 @@ function renderMyPage(){
   h.textContent = `${me.name}さんのマイページ(${selectedYear}年度)`;
   titleRow.appendChild(h);
   wrap.appendChild(titleRow);
-  wrap.appendChild(renderPeriodButtons(myPagePeriod, (p)=> guardedNavigate(()=>{ myPagePeriod = p; render(); })));
+  const news = resultNews(me, selectedYear);
+  const curKey = seenKey(selectedYear, myPagePeriod);
+  if(news[myPagePeriod]){ // 開いた時点で既読にする。表示中はNEWを残す
+    freshResults.set(curKey, news[myPagePeriod]);
+    markSeen("results", curKey, resultPrint(pd));
+  }
+  const marks = {...news};
+  PERIODS.forEach(p=>{ const f = freshResults.get(seenKey(selectedYear, p)); if(f) marks[p] = f; });
+  wrap.appendChild(renderPeriodButtons(myPagePeriod, (p)=> guardedNavigate(()=>{ myPagePeriod = p; render(); }), marks));
 
   // 自己評価を出し、かつ評価者が確定するまでは中身を見せない(順序を守ってバイアスを避けつつ、
   // 未確定の書きかけスコアが見えて後で食い違う事態も避ける)
@@ -3931,6 +4094,16 @@ function renderMyPage(){
     }
     wrap.appendChild(lockedCard);
     return wrap;
+  }
+
+  const fresh = freshResults.get(curKey);
+  if(fresh){
+    const nb = document.createElement("div");
+    nb.className = "news-banner" + (fresh==="updated" ? " upd" : "");
+    nb.innerHTML = fresh==="updated"
+      ? `<span class="new-tag upd">更新</span>${periodName(myPagePeriod)}の評価が確定後に更新されました。内容を確認してください。`
+      : `<span class="new-tag">NEW</span>${periodName(myPagePeriod)}の結果が出ました。`;
+    wrap.appendChild(nb);
   }
 
   // 1) 評価者からのコメント
@@ -4138,7 +4311,8 @@ function renderMyNotes(){
   h.className = "title";
   h.textContent = "メモ";
   wrap.appendChild(h);
-  wrap.appendChild(renderGrowthNotes(me));
+  unseenNotes(me).forEach(n=>{ freshNoteIds.add(n.id); markSeen("notes", n.id, 1); });
+  wrap.appendChild(renderGrowthNotes(me, {fresh: freshNoteIds}));
   return wrap;
 }
 
