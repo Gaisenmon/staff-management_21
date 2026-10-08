@@ -900,7 +900,7 @@ function renderUserPicker(){
   const logoutBtn = document.createElement("button");
   logoutBtn.className = "logout-btn";
   logoutBtn.textContent = "ログアウト";
-  logoutBtn.onclick = ()=> signOut(auth);
+  logoutBtn.onclick = ()=> guardedNavigate(()=> signOut(auth));
   box.appendChild(logoutBtn);
   return box;
 }
@@ -3042,9 +3042,13 @@ function ensureShiftDateListLoaded(){
     }).catch(()=>{ shiftDateListCache = []; shiftDateListFetching = false; });
 }
 let shiftFetchInFlight = {};
+/* 日付欄を消すと空文字になる。空のままパスに入れると shifts/ 全体を読み書きしてしまうため、
+   Firebaseに触る前に必ずこの形式チェックを通す */
+function isValidShiftDate(d){ return typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d); }
 /* シフトデータを(未取得なら)Firebaseから取り込んでキャッシュする共通処理。
    シフトデータタブ・データ分析タブの両方から使う。 */
 function ensureShiftDataLoaded(date){
+  if(!isValidShiftDate(date)) return;
   if(!(date in shiftDataCache) && !shiftFetchInFlight[date]){
     shiftFetchInFlight[date] = true;
     get(ref(db, `stores/${STORE_ID}/shifts/${date}`)).then(snap=>{
@@ -3243,6 +3247,7 @@ function renderShifts(){
   uploadBtn.onclick = ()=>{
     const file = fileInput.files[0];
     if(!file){ shiftUploadStatus = {type:"error", message:"ファイルを選んでください。"}; render(); return; }
+    if(!isValidShiftDate(shiftSelectedDate)){ shiftUploadStatus = {type:"error", message:"日付を選んでください。"}; render(); return; }
     if(typeof window.XLSX === "undefined"){
       shiftUploadStatus = {type:"error", message:"Excel読み込み機能の読み込みに失敗しました。ページを再読み込みしてください。"};
       render(); return;
@@ -3353,7 +3358,9 @@ function renderShifts(){
   const currentData = shiftDataCache[shiftSelectedDate];
   statusCard.innerHTML = currentData
     ? `<div style="font-size:13px;color:var(--muted);">${shiftSelectedDate}分:取り込み済み(${currentData.staff.length}名)</div>`
-    : `<div class="empty">${shiftSelectedDate}のシフトはまだ取り込まれていません</div>`;
+    : isValidShiftDate(shiftSelectedDate)
+      ? `<div class="empty">${shiftSelectedDate}のシフトはまだ取り込まれていません</div>`
+      : `<div class="empty">日付を選んでください</div>`;
   wrap.appendChild(statusCard);
 
   if(currentData){
@@ -4760,6 +4767,12 @@ onAuthStateChanged(auth, (user)=>{
   } else {
     loginScreen.style.display = "flex";
     app.style.display = "none";
+    // 一度アプリを開始した後のログアウト(またはセッション切れ)では、ページを読み込み直す。
+    // startApp()は1回しか動かず「今ログインしている人」も決め直されないため、そのまま別の人がログインすると前の人として操作できてしまう
+    if(appStarted){
+      unsaved = false; // ログアウトボタンの未保存確認は guardedNavigate で済んでいる。セッション切れの後はどのみち保存できないので、ブラウザの離脱確認は出さない
+      window.location.reload();
+    }
   }
 });
 </script>
