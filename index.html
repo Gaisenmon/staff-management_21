@@ -324,8 +324,8 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script type="module">
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getDatabase, ref, set, get, onValue, runTransaction, update } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
-import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getDatabase, ref, set, get, onValue, runTransaction, update, connectDatabaseEmulator } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword, updatePassword, reauthenticateWithCredential, EmailAuthProvider, connectAuthEmulator } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 /* ==============================================================
    会社用(赤門)本番接続。akamo-staff-management プロジェクトに接続。
@@ -340,8 +340,14 @@ const firebaseConfig = {
   messagingSenderId: "249759074777",
   appId: "1:249759074777:web:4b9b5332d22dae182bf1c8"
 };
-const fbApp = initializeApp(firebaseConfig);
+/* 開発用:手元(localhost)で ?emulator=1 を付けて開いたときだけ、Firebaseエミュレーター(本番とは無関係の架空のプロジェクト)に接続する。
+   公開中のページ(github.io)では、この切り替えは働かない */
+const USE_EMULATOR = ["localhost","127.0.0.1"].includes(location.hostname) && new URLSearchParams(location.search).get("emulator") === "1";
+const fbApp = initializeApp(USE_EMULATOR
+  ? { apiKey:"fake-key", authDomain:"demo-ats.firebaseapp.com", databaseURL:"https://demo-ats-default-rtdb.firebaseio.com", projectId:"demo-ats" }
+  : firebaseConfig);
 const db = getDatabase(fbApp);
+if(USE_EMULATOR) connectDatabaseEmulator(db, "127.0.0.1", 9000);
 /* ==============================================================
    店舗展開用の設定値。新しい店舗にこのファイルをコピーする時は、
    DEFAULT_STORE_ID をその店舗のIDに変更するだけでよい(他の行は触らない)。
@@ -357,9 +363,31 @@ const STORE_INFO = {
 };
 const STORE_NAME  = STORE_INFO[STORE_ID]?.name  || STORE_ID;
 const STORE_SHORT = STORE_INFO[STORE_ID]?.short || "店舗";
-const stateRef = ref(db, `stores/${STORE_ID}/ats/state`); // ホール運営システムの stores/${STORE_ID}/state とは別パス
-const historyRef = ref(db, `stores/${STORE_ID}/ats/history`); // 変更履歴は増減が激しいので本体とは別パスに分離
+const stateRef = ref(db, `stores/${STORE_ID}/ats/state`); // 旧:全員分を1か所に置いていた場所。段階3の移行元で、移行後は管理者だけが読める控えになる
+const historyRef = ref(db, `stores/${STORE_ID}/ats/history`); // 変更履歴。段階3から {履歴id: 1件} の形(以前は配列で、追加のたびに全体を書き直していた)
+
+/* ---- スタッフ1人ずつの保存先(段階3) ----
+   stores/{店舗}/ats/staff/{スタッフid} = { profile:{氏名・社員CD・権限など}, yearData:{評価・自己評価}, growthNotes:{メモid: メモ} }
+   全員分を1か所に置くと、Firebaseのルールで「本人の分だけ読める」「プロフィールは管理者だけ書ける」を作れないため分けた。
+   画面側は今までどおり state.staff(全員分の配列。一般スタッフの端末では本人1人分だけ)を使い、保存先との変換はここで行う。 */
+const staffRootRef = ref(db, `stores/${STORE_ID}/ats/staff`);
+const staffRef = (id, part)=> ref(db, `stores/${STORE_ID}/ats/staff/${id}${part ? "/"+part : ""}`);
+const metaRef = ref(db, `stores/${STORE_ID}/ats/meta`); // {years:[年度], updatedAt}
+const codeIndexRef = code => ref(db, `stores/${STORE_ID}/ats/codeIndex${code !== undefined ? "/"+code : ""}`); // 社員CD→スタッフid(一般スタッフが自分のレコードを探すため)
+function profileOf(st){ const p = {...st}; delete p.yearData; delete p.growthNotes; return p; }
+function notesToMap(arr){ const m = {}; (arr||[]).forEach(n=>{ if(n && n.id) m[n.id] = n; }); return m; }
+function notesToArray(map){ return Object.values(map||{}).filter(Boolean).sort((a,b)=> (a.ts||"").localeCompare(b.ts||"")); }
+function toRecord(st){ return { profile: profileOf(st), yearData: st.yearData || {}, growthNotes: notesToMap(st.growthNotes) }; }
+function fromRecord(id, rec){ return { ...(rec?.profile||{}), id: rec?.profile?.id ?? id, yearData: rec?.yearData || {}, growthNotes: notesToArray(rec?.growthNotes) }; }
+function staffOrder(a, b){ return (a.order ?? 1e9) - (b.order ?? 1e9) || String(a.id).localeCompare(String(b.id)); }
+/* Realtime Database は、キーが連番の数字(スタッフid "1"〜"58" など)だと配列で返してくるので、どちらでも {キー: 値} として扱う */
+function entriesOf(val){
+  if(Array.isArray(val)) return val.map((v,i)=>[String(i), v]).filter(([,v])=> v !== null && v !== undefined);
+  return Object.entries(val || {});
+}
+function staffArrayFromMap(val){ return entriesOf(val).map(([id, rec])=> fromRecord(id, rec)).sort(staffOrder); }
 const auth = getAuth(fbApp);
+if(USE_EMULATOR) connectAuthEmulator(auth, "http://127.0.0.1:9099", {disableWarnings:true});
 const LOGIN_DOMAIN = "gaisenmon.local";
 function codeToEmail(code){ return `${code.trim()}@${LOGIN_DOMAIN}`; }
 
@@ -475,11 +503,18 @@ function backupPayload(reason){
     staffCount: (lastServerCore?.staff || state.staff).length,
   };
 }
+/* サーバー上の最新の全員分({staff:[...], years})。バックアップ用(管理者だけが読める) */
+async function fetchServerCore(){
+  const [sSnap, mSnap] = await Promise.all([get(staffRootRef), get(metaRef)]);
+  const staff = staffArrayFromMap(sSnap.val());
+  if(!staff.length) return null;
+  return { staff, years: mSnap.val()?.years || [] };
+}
 /* サーバー上の最新(=全員で共有されている状態)を控える。未保存の手元の変更は含めない */
 async function takeSnapshot(reason){
+  if(!isCurrentUserAdmin()) return; // バックアップの読み書きはルール上、管理者だけ
   try{
-    const snap = await get(stateRef);
-    const cur = snap.val();
+    const cur = await fetchServerCore();
     if(!cur) return;
     const {date, time} = jstParts();
     const key = `${date}_${time}_${Math.random().toString(36).slice(2,6)}`;
@@ -490,7 +525,7 @@ async function takeSnapshot(reason){
 }
 let dailyBackupChecked = false;
 async function ensureDailyBackup(){
-  if(dailyBackupChecked) return;
+  if(dailyBackupChecked || !isCurrentUserAdmin()) return;
   dailyBackupChecked = true;
   try{
     const {date} = jstParts();
@@ -498,8 +533,7 @@ async function ensureDailyBackup(){
     // 複数の端末が同時に開いても1つだけ作るよう、一覧側の枠を先に取り合う
     const res = await runTransaction(backupIndexRef(key), cur => cur ? undefined : backupPayload("毎日の自動バックアップ"), {applyLocally:false});
     if(!res.committed) return;
-    const snap = await get(stateRef);
-    const cur = snap.val();
+    const cur = await fetchServerCore();
     if(!cur){ await set(backupIndexRef(key), null); return; }
     await set(backupRef(key), {...res.snapshot.val(), staff: cur.staff, years: cur.years, staffCount: Array.isArray(cur.staff) ? cur.staff.length : 0});
     await set(backupIndexRef(key), {...res.snapshot.val(), staffCount: Array.isArray(cur.staff) ? cur.staff.length : 0});
@@ -515,8 +549,8 @@ async function archiveOldHistory(){
   try{
     const limit = new Date(Date.now() - HISTORY_KEEP_DAYS*24*3600*1000).toISOString();
     const snap = await get(historyRef);
-    const cur = Array.isArray(snap.val()) ? snap.val() : [];
-    const old = cur.filter(h=> h && h.ts && h.ts < limit);
+    const cur = entriesOf(snap.val()).map(([,h])=>h);
+    const old = cur.filter(h=> h && h.id && h.ts && h.ts < limit);
     if(old.length===0) return;
     // 1) 年ごとの保管場所に足す(同じidは重ねない)
     const byYear = {};
@@ -528,9 +562,10 @@ async function archiveOldHistory(){
         return [...base, ...list.filter(x=>!ids.has(x.id))].sort((a,b)=> (b.ts||"").localeCompare(a.ts||""));
       }, {applyLocally:false});
     }
-    // 2) 保管できたものを本体から外す
-    const oldIds = new Set(old.map(h=>h.id));
-    await runTransaction(historyRef, (h)=> (Array.isArray(h) ? h : []).filter(x=> !oldIds.has(x.id)), {applyLocally:false});
+    // 2) 保管できたものを本体から外す(履歴は1件ずつの形なので、該当分だけ消す)
+    const removal = {};
+    old.forEach(h=>{ removal[h.id] = null; });
+    await update(historyRef, removal);
   }catch(e){ console.error("変更履歴の保管に失敗", e); }
 }
 async function pruneBackups(){
@@ -555,31 +590,35 @@ function migrateCoreState(s){
   if(!Array.isArray(s.staff)) s.staff = [];
   s.staff = s.staff.filter(st=> st && !deletedStaffIds.has(String(st.id)));
   if(!s.years || s.years.length===0) s.years = [INITIAL_YEAR];
-  s.staff.forEach(st=>{
-    if(!st.status){ st.status = st.active===false ? "resigned" : "active"; }
-    if(st.isEvaluator === undefined){ st.isEvaluator = false; } // 以前は氏名の一覧から初期値を決めていたが、個人情報をHTMLに置かないため廃止(既存データは設定済み)
-    st.isEvaluatee = st.employType !== "社員" && !st.isSystemAdmin; // 被評価者かどうか。社員(別の評価指標のため)とシステム管理者は常に対象外(評価データはその時点の値のまま残る)
-    if(st.isAdmin === undefined){ st.isAdmin = (st.employType === "社員") || st.name === "木内 健太"; } // 管理者かどうか。既存の社員+木内さんは自動でtrue
-    if(st.hasLogin === undefined){ st.hasLogin = false; }
-    if(!Array.isArray(st.growthNotes)) st.growthNotes = [];
-    if(st.assignedEvaluatorId === undefined) st.assignedEvaluatorId = ""; // 評価担当(評価者のstaff id)
-    if(st.yearData){
-      Object.entries(st.yearData).forEach(([fy, yd])=>{
-        Object.entries(yd).forEach(([period, pd])=>{
-          if(pd.exempt === undefined) pd.exempt = false;
-          // 入社より前の期間は自動で評価対象外にする(入社日を後から変えた場合は自動で解除)
-          const beforeHire = isBeforeHire(st.hireDate, fy, period);
-          if(beforeHire && !pd.exempt){ pd.exempt = true; pd.exemptAuto = true; }
-          else if(!beforeHire && pd.exemptAuto){ pd.exempt = false; delete pd.exemptAuto; }
-          if(!pd.selfScores) pd.selfScores = emptyScores();
-          if(pd.selfGoal === undefined) pd.selfGoal = "";
-          if(pd.selfSubmitted === undefined) pd.selfSubmitted = false;
-          if(pd.evaluatorGoal === undefined) pd.evaluatorGoal = "";
-        });
-      });
-    }
-  });
+  s.staff.forEach(migrateStaffObj);
   return s;
+}
+/* スタッフ1人分の補完・自動計算(読み込み時と、保存時にサーバーの最新値へ合成する前に使う) */
+function migrateStaffObj(st){
+  if(st.code !== undefined && st.code !== null && typeof st.code !== "string") st.code = String(st.code); // ルールで社員CDを文字列として照合するため
+  if(!st.status){ st.status = st.active===false ? "resigned" : "active"; }
+  if(st.isEvaluator === undefined){ st.isEvaluator = false; } // 以前は氏名の一覧から初期値を決めていたが、個人情報をHTMLに置かないため廃止(既存データは設定済み)
+  st.isEvaluatee = st.employType !== "社員" && !st.isSystemAdmin; // 被評価者かどうか。社員(別の評価指標のため)とシステム管理者は常に対象外(評価データはその時点の値のまま残る)
+  if(st.isAdmin === undefined){ st.isAdmin = (st.employType === "社員") || st.name === "木内 健太"; } // 管理者かどうか。既存の社員+木内さんは自動でtrue
+  if(st.hasLogin === undefined){ st.hasLogin = false; }
+  if(!Array.isArray(st.growthNotes)) st.growthNotes = [];
+  if(st.assignedEvaluatorId === undefined) st.assignedEvaluatorId = ""; // 評価担当(評価者のstaff id)
+  if(st.yearData){
+    Object.entries(st.yearData).forEach(([fy, yd])=>{
+      Object.entries(yd).forEach(([period, pd])=>{
+        if(pd.exempt === undefined) pd.exempt = false;
+        // 入社より前の期間は自動で評価対象外にする(入社日を後から変えた場合は自動で解除)
+        const beforeHire = isBeforeHire(st.hireDate, fy, period);
+        if(beforeHire && !pd.exempt){ pd.exempt = true; pd.exemptAuto = true; }
+        else if(!beforeHire && pd.exemptAuto){ pd.exempt = false; delete pd.exemptAuto; }
+        if(!pd.selfScores) pd.selfScores = emptyScores();
+        if(pd.selfGoal === undefined) pd.selfGoal = "";
+        if(pd.selfSubmitted === undefined) pd.selfSubmitted = false;
+        if(pd.evaluatorGoal === undefined) pd.evaluatorGoal = "";
+      });
+    });
+  }
+  return st;
 }
 /* 評価時期ごとの対象期間の最終日(年度yの「4月」=y年2〜4月分 → y-04-30 など) */
 function periodEndDate(fy, period){
@@ -678,47 +717,94 @@ function saveState(){
   saveChain = saveChain.then(saveStateNow, saveStateNow);
   return saveChain;
 }
-/* 保存は「読み込み→合成→書き込み」をトランザクションで一体に行う。
-   2台がほぼ同時に保存しても、後の方は必ず先の方の保存結果の上に合成し直されるため、
-   どちらかの変更が消えることがない。 */
+/* 保存:手元で変えた部分だけを、スタッフ1人ずつ・部分ごとに書き込む(段階3)。
+   ・プロフィール(管理者だけ)と評価(管理者・評価者)は、その部分をトランザクションで「読み込み→合成→書き込み」する。
+     2台がほぼ同時に保存しても、後の方は先の方の結果の上に合成し直されるので、どちらかの変更が消えることはない。
+   ・一般スタッフは、自分の自己評価・目標・提出済みの印だけを項目ごとに書く(ルール上、それ以外は書けない)。
+   ・一言メモは1件ずつ書く(書いた本人か、管理者・評価者だけが書ける)。
+   保存した結果は、購読しているデータの更新として戻ってきて handleRemoteState で取り込まれる。 */
+const SELF_FIELDS = ["selfScores","selfGoal","selfSubmitted"];
+function committed(res){ if(!res.committed) throw new Error("not committed"); }
 async function saveStateNow(){
   migrateCoreState({staff: state.staff, years: state.years}); // 入社前の期間の自動対象外などを手元にも反映
-  const localCore = JSON.parse(JSON.stringify({staff: state.staff, years: state.years}));
-  const baseCore = lastServerCore;
-  try{
-    const res = await runTransaction(stateRef, (cur)=>{
-      const latest = cur ? migrateCoreState(JSON.parse(JSON.stringify(cur))) : null;
-      const merged = latest ? mergeStateForSave(latest, localCore, baseCore) : localCore;
-      return { staff: merged.staff, years: merged.years, updatedAt: new Date().toISOString() };
-    }, {applyLocally:false});
-    if(!res.committed) throw new Error("not committed");
-    const server = migrateCoreState(JSON.parse(JSON.stringify(res.snapshot.val())));
-    // 保存中にさらに手元で変えた分は残しつつ、保存結果(他端末の変更を含む)を取り込む
-    const nextStaff = merge3(localCore.staff, state.staff, server.staff);
-    syncStaffInPlace(JSON.parse(JSON.stringify(nextStaff)));
-    state.years = Array.from(new Set([...(server.years||[]), ...(state.years||[])])).sort();
-    state.updatedAt = server.updatedAt;
-    lastServerCore = JSON.parse(JSON.stringify({staff: server.staff, years: server.years}));
-    refreshEditBaselines();
-  }catch(e){
-    console.error("save failed", e);
+  const local = JSON.parse(JSON.stringify(state.staff));
+  const base = lastServerCore?.staff || [];
+  const baseById = new Map(base.map(s=>[String(s.id), s]));
+  const localIds = new Set(local.map(s=>String(s.id)));
+  const admin = isCurrentUserAdmin();
+  const privileged = isPrivilegedUser();
+  const writes = [];
+  let maxOrder = Math.max(-1, ...local.map(s=> Number.isFinite(s.order) ? s.order : -1), ...base.map(s=> Number.isFinite(s.order) ? s.order : -1));
+  for(const l of local){
+    const id = String(l.id);
+    const b = baseById.get(id);
+    if(!b){
+      if(!admin) continue; // スタッフの追加は管理者だけ
+      if(!Number.isFinite(l.order)){ // 一覧での並び順。新しい人は最後に付ける
+        l.order = ++maxOrder;
+        const live = state.staff.find(x=>String(x.id)===id);
+        if(live) live.order = l.order;
+      }
+      writes.push(set(staffRef(id), toRecord(l)));
+      continue;
+    }
+    const lp = profileOf(l), bp = profileOf(b);
+    if(admin && !sameVal(lp, bp)){
+      writes.push(runTransaction(staffRef(id, "profile"), cur=>{
+        const latest = cur ? profileOf(migrateStaffObj({...cur, yearData:{}, growthNotes:[]})) : null;
+        return latest ? merge3(bp, lp, latest) : lp;
+      }, {applyLocally:false}).then(committed));
+    }
+    if(!sameVal(l.yearData||{}, b.yearData||{})){
+      if(privileged){
+        writes.push(runTransaction(staffRef(id, "yearData"), cur=>{
+          const latest = cur ? migrateStaffObj({...lp, yearData: cur, growthNotes:[]}).yearData : null;
+          return latest ? merge3(b.yearData||{}, l.yearData||{}, latest) : (l.yearData||{});
+        }, {applyLocally:false}).then(committed));
+      } else {
+        const upd = {};
+        Object.entries(l.yearData||{}).forEach(([fy, yd])=> Object.entries(yd||{}).forEach(([period, pd])=>{
+          SELF_FIELDS.forEach(f=>{ if(!sameVal(pd?.[f], b.yearData?.[fy]?.[period]?.[f])) upd[`${fy}/${period}/${f}`] = pd?.[f] ?? null; });
+        }));
+        if(Object.keys(upd).length) writes.push(update(staffRef(id, "yearData"), upd));
+      }
+    }
+    const ln = notesToMap(l.growthNotes), bn = notesToMap(b.growthNotes);
+    const noteUpd = {};
+    Object.entries(ln).forEach(([nid, n])=>{ if(!sameVal(n, bn[nid])) noteUpd[nid] = n; });
+    Object.keys(bn).forEach(nid=>{ if(!(nid in ln)) noteUpd[nid] = null; });
+    if(Object.keys(noteUpd).length) writes.push(update(staffRef(id, "growthNotes"), noteUpd));
+  }
+  if(admin) base.forEach(b=>{ if(!localIds.has(String(b.id))) writes.push(set(staffRef(String(b.id)), null)); }); // 削除したスタッフ
+  // 年度は増える一方の情報なので、サーバー側と合わせる(書けるのは管理者だけ)
+  const localYears = state.years || [];
+  if(admin && localYears.some(y=> !(lastServerCore?.years||[]).includes(y))){
+    writes.push(runTransaction(ref(db, `stores/${STORE_ID}/ats/meta/years`), cur=>
+      Array.from(new Set([...(Array.isArray(cur) ? cur : []), ...localYears])).sort()
+    , {applyLocally:false}).then(committed));
+  }
+  const results = await Promise.allSettled(writes);
+  const failed = results.filter(r=> r.status === "rejected");
+  if(failed.length){
+    failed.forEach(r=> console.error("save failed", r.reason));
     showToast("保存に失敗しました。通信状況を確認してもう一度保存してください");
     return;
   }
 
-  // ---- 変更履歴(別パス。頻繁に増減するので本体と分けて保存している) ----
-  const localHistory = JSON.parse(JSON.stringify(state.history||[]));
-  const baseHistory = lastServerHistory || [];
-  if(!sameVal(localHistory, baseHistory)){
+  // ---- 変更履歴(1件ずつ。一般スタッフも追加はできるが、読めるのは管理者・評価者だけ) ----
+  const baseHistIds = new Set((lastServerHistory||[]).map(h=>h.id));
+  const localHist = state.history || [];
+  const localHistIds = new Set(localHist.map(h=>h.id));
+  const histUpd = {};
+  localHist.forEach(h=>{ if(h && h.id && !baseHistIds.has(h.id)) histUpd[h.id] = h; });
+  if(admin) (lastServerHistory||[]).forEach(h=>{ if(!localHistIds.has(h.id)) histUpd[h.id] = null; });
+  if(Object.keys(histUpd).length){
     try{
-      const res = await runTransaction(historyRef, (cur)=>
-        mergeHistoryForSave(Array.isArray(cur) ? cur : [], localHistory, baseHistory)
-      , {applyLocally:false});
-      if(res.committed){
-        const server = Array.isArray(res.snapshot.val()) ? res.snapshot.val() : [];
-        state.history = mergeHistoryForSave(server, state.history, localHistory);
-        lastServerHistory = JSON.parse(JSON.stringify(server));
-      }
+      await update(historyRef, histUpd);
+      // 書けた分を基準点に反映(反映しないと、次の保存でまた同じ履歴を書こうとする)
+      const kept = (lastServerHistory||[]).filter(h=> histUpd[h.id] !== null);
+      const added = Object.values(histUpd).filter(Boolean);
+      lastServerHistory = JSON.parse(JSON.stringify([...added, ...kept].sort((x,y)=> (y.ts||"").localeCompare(x.ts||""))));
     }catch(e){
       console.error("history save failed", e);
     }
@@ -796,6 +882,7 @@ function isCurrentUserAdmin(){
    書き込めるのは、ルール上この店舗の管理者かシステム管理者(systemAdmins)だけ。 */
 const membersRef = ref(db, `members/${STORE_ID}`);
 let membersCache = null;      // サーバー上の今の表(未取得ならnull)
+let codeIndexCache = null;    // 社員CD→スタッフidの索引(段階3。一般スタッフが自分のレコードを探すのに使う)
 let membersListening = false;
 let membersSyncTimer = null;
 let membersSyncStopped = false; // ルールで書き込みを拒否されたら、この画面を開いている間は同期をやめる(拒否→元に戻る→再送 の繰り返しを防ぐ)
@@ -816,14 +903,36 @@ function scheduleMembersSync(){
     membersListening = true;
     onValue(membersRef, snap=>{ membersCache = snap.val() || {}; scheduleMembersSync(); },
       err=>{ membersCache = null; membersListening = false; console.warn("メンバー表を読めませんでした", err); });
+    onValue(codeIndexRef(), snap=>{ codeIndexCache = Object.fromEntries(entriesOf(snap.val())); scheduleMembersSync(); },
+      err=>{ codeIndexCache = null; console.warn("社員CDの索引を読めませんでした", err); });
     return; // 初回の受信後に改めて呼ばれる
   }
   clearTimeout(membersSyncTimer);
   membersSyncTimer = setTimeout(syncMembers, 1500); // 保存が続く間はまとめて1回にする
 }
+function desiredCodeIndex(){
+  const m = {};
+  (state?.staff || []).forEach(s=>{
+    const code = String(s.code ?? "").trim();
+    if(code && !/[.#$\[\]\/]/.test(code)) m[code] = String(s.id);
+  });
+  return m;
+}
 function syncMembers(){
   if(membersCache === null || !isCurrentUserAdmin()) return;
   if(!(state?.staff || []).length) return; // 読み込み途中の空の一覧で全員を消さないため
+  if(codeIndexCache !== null){
+    const wantIdx = desiredCodeIndex();
+    const idxUpd = {};
+    Object.entries(wantIdx).forEach(([code, id])=>{ if(String(codeIndexCache[code] ?? "") !== id) idxUpd[code] = id; });
+    Object.keys(codeIndexCache).forEach(code=>{ if(!(code in wantIdx)) idxUpd[code] = null; });
+    if(Object.keys(idxUpd).length){
+      update(codeIndexRef(), idxUpd).catch(e=>{
+        membersSyncStopped = true;
+        console.warn("社員CDの索引の更新に失敗しました(この画面では同期を止めます)", e);
+      });
+    }
+  }
   const want = desiredMembers();
   const self = String(getLoginCode());
   const updates = {};
@@ -1026,8 +1135,9 @@ function showTwoInputModal(message, onSubmit, opts){
    同じFirebaseアプリのAuthで直接作成すると管理者自身が新アカウントに切り替わってしまうため、
    一時的な別インスタンスを作ってそこで作成し、使い終わったら破棄する。 */
 async function createLoginAccount(code, password){
-  const tempApp = initializeApp(firebaseConfig, "temp-"+Date.now());
+  const tempApp = initializeApp(fbApp.options, "temp-"+Date.now());
   const tempAuth = getAuth(tempApp);
+  if(USE_EMULATOR) connectAuthEmulator(tempAuth, "http://127.0.0.1:9099", {disableWarnings:true});
   try{
     await createUserWithEmailAndPassword(tempAuth, codeToEmail(code), password);
   } finally {
@@ -1379,7 +1489,8 @@ function applyDefaultYearAndPeriod(){
   let { period, fiscalYear } = computeCurrentPeriodDefault();
   fiscalYear = state.years.includes(fiscalYear) ? fiscalYear : state.years[state.years.length-1];
   // 日付ベースの時期が全員確定済みなら、まだ確定しきっていない時期まで自動で進める
-  for(let i=0; i<PERIODS.length*state.years.length; i++){
+  // (一般スタッフの端末には本人の分しかなく「全員確定」を判定できないので、進めずに日付どおりの時期を使う)
+  for(let i=0; isPrivilegedUser() && i<PERIODS.length*state.years.length; i++){
     if(!isPeriodFullyConfirmed(fiscalYear, period)) break;
     const next = advancePeriod(fiscalYear, period);
     if(next.period===period && next.fiscalYear===fiscalYear) break; // これ以上進めない
@@ -2463,6 +2574,7 @@ function renderGrowthNotes(staffObj, opts = {}){
       id: "n"+Date.now()+Math.random().toString(36).slice(2,6),
       ts: new Date().toISOString(),
       author: currentPersonName || "(不明)",
+      authorCode: String(getLoginCode()), // 書いた人の社員CD。ルールで「自分のメモだけ書き換えられる」を判定するのに使う
       text,
     });
     await saveState();
@@ -3482,6 +3594,7 @@ const STATUS_META = {
         try{
           await set(ref(db, `stores/${STORE_ID}/ats/deletedStaff/${delId}`), {name: editingStaff.name, code: editingStaff.code || "", ts: new Date().toISOString(), by: currentPersonName || ""});
         }catch(e){ console.error("削除記録の保存に失敗", e); }
+        try{ await set(staffRef(delId), null); }catch(e){ console.error("スタッフのレコードの削除に失敗", e); } // 削除の直前の状態はバックアップに残っている
         logGenericChange(editingStaff.name, "スタッフ", "登録あり", "削除");
         state.staff = state.staff.filter(s=>s.id!==editingStaff.id);
         editingStaffId = null;
@@ -3731,10 +3844,14 @@ function renderBackupDetail(key, meta){
     await takeSnapshot(`全体復元の前(${fmtBackupTime(meta.ts)}の状態に戻す)`);
     const ids = bStaff.map(s=>String(s.id)).filter(id=>deletedStaffIds.has(id));
     for(const id of ids){ deletedStaffIds.delete(id); try{ await set(ref(db, `stores/${STORE_ID}/ats/deletedStaff/${id}`), null); }catch(e){} }
-    const payload = {staff: bStaff, years: Array.isArray(data.years) && data.years.length ? data.years : state.years, updatedAt: new Date().toISOString()};
+    const years = Array.isArray(data.years) && data.years.length ? data.years : state.years;
     try{
-      const res = await runTransaction(stateRef, ()=> payload, {applyLocally:false});
-      const server = migrateCoreState(JSON.parse(JSON.stringify(res.snapshot.val())));
+      // スタッフ1人ずつの形に直して、全員分をまとめて置き換える(並び順はバックアップの順)
+      const records = {};
+      bStaff.forEach((st, i)=>{ if(st && st.id !== undefined) records[String(st.id)] = toRecord({...st, order: i}); });
+      await set(staffRootRef, records);
+      await set(ref(db, `stores/${STORE_ID}/ats/meta/years`), years);
+      const server = migrateCoreState(JSON.parse(JSON.stringify({staff: staffArrayFromMap(records), years})));
       state.staff = server.staff; state.years = server.years;
       lastServerCore = JSON.parse(JSON.stringify({staff: server.staff, years: server.years}));
       Object.keys(editSnapshots).forEach(k=> delete editSnapshots[k]);
@@ -4568,19 +4685,75 @@ function renderHistoryArchiveCard(){
 
 /* ============================== 起動(ログイン後にリアルタイム購読を開始) ============================== */
 let appStarted = false;
-/* 変更履歴を本体から独立させる前の旧データには、state側に history が同居している可能性がある。
-   新しい保存先(historyRef)がまだ空で、旧データ側に履歴が残っている場合だけ、一度だけ移す。 */
-async function migrateLegacyHistoryIfNeeded(){
-  try{
-    const [stateSnap, histSnap] = await Promise.all([get(stateRef), get(historyRef)]);
-    const legacyHistory = stateSnap.val()?.history;
-    const currentHistory = histSnap.val();
-    if(Array.isArray(legacyHistory) && legacyHistory.length>0 && (!Array.isArray(currentHistory) || currentHistory.length===0)){
-      await set(historyRef, legacyHistory);
-    }
-  }catch(e){
-    console.error("履歴の移行チェックに失敗", e);
+/* ---- 段階3:誰として、どの範囲のデータを読むかを決める ----
+   管理者・評価者・システム管理者は全員分、一般スタッフは自分の分だけ(社員CD→スタッフidの索引で探す)。
+   メンバー表に載っていない人は、ルール上どのデータも読めない。 */
+async function determineAccess(){
+  const code = String(getLoginCode());
+  let role = null, sys = false;
+  try{ role = (await get(ref(db, `members/${STORE_ID}/${code}`))).val(); }catch(e){}
+  try{ sys = (await get(ref(db, `systemAdmins/${code}`))).val() === true; }catch(e){}
+  const canAdmin = sys || role === "admin";
+  if(canAdmin || role === "evaluator") return {mode:"full", canAdmin};
+  if(role === "staff"){
+    let id = null;
+    try{ id = (await get(codeIndexRef(code))).val(); }catch(e){}
+    return id ? {mode:"self", staffId: String(id)} : {mode:"maintenance"};
   }
+  return {mode:"denied"};
+}
+function showBlockingMessage(html){
+  document.getElementById("main").innerHTML = `<div style="padding:30px;line-height:1.8;max-width:600px;">${html}<br><button id="blocking-logout" class="primary" style="margin-top:14px;">ログアウト</button></div>`;
+  document.getElementById("blocking-logout").onclick = ()=> signOut(auth); // 別の人でログインし直せるように(ログアウト後はページが読み込み直される)
+}
+function showAccessDenied(){
+  // メンバー表に載っていない(ログイン未設定・退職・別店舗など)と、DBのルールで読み取りを拒否される
+  showBlockingMessage(`この店舗のデータを表示する権限がありません。<br>店舗の管理者に、ログインの設定を確認してもらってください。<br><span style="color:var(--muted);font-size:12px;">(ログインID: ${String(getLoginCode()).replace(/[<>&"]/g,"")})</span>`);
+}
+function showMaintenance(){
+  showBlockingMessage(`ただいまデータの移行作業中です。<br>しばらくしてから、ページを読み込み直してください。`);
+}
+/* 旧形式(ats/state に全員分)から、スタッフ1人ずつの形へ移す。移行元は消さない。管理者が1回だけ行う */
+async function migrateToPerStaff(legacy){
+  const core = migrateCoreState(JSON.parse(JSON.stringify({staff: legacy.staff || [], years: legacy.years || []})));
+  const codeByName = new Map(core.staff.map(st=>[st.name, String(st.code ?? "")]));
+  const records = {}, codeIndex = {};
+  core.staff.forEach((st, i)=>{
+    st.order = i; // 今の並び順を保つ
+    (st.growthNotes||[]).forEach(n=>{ if(n && n.authorCode === undefined && codeByName.get(n.author)) n.authorCode = codeByName.get(n.author); });
+    records[String(st.id)] = toRecord(st);
+    const c = String(st.code ?? "").trim();
+    if(c && !/[.#$\[\]\/]/.test(c)) codeIndex[c] = String(st.id);
+  });
+  const hist = {};
+  entriesOf((await get(historyRef)).val()).forEach(([, h])=>{ if(h && h.id) hist[h.id] = h; });
+  const now = new Date().toISOString();
+  await update(ref(db, `stores/${STORE_ID}/ats`), { staff: records, meta: {years: core.years, updatedAt: now, migratedAt: now}, history: hist, codeIndex });
+  return {staff: core.staff.length, history: Object.keys(hist).length};
+}
+function showMigrationScreen(legacy){
+  const n = Array.isArray(legacy?.staff) ? legacy.staff.length : 0;
+  document.getElementById("main").innerHTML = `<div style="padding:30px;line-height:1.8;max-width:600px;">
+    <div style="font-weight:800;font-size:16px;margin-bottom:8px;">データの移行が必要です</div>
+    保存の形を「全員分を1か所」から「スタッフ1人ずつ」に移します(一般スタッフが自分の評価だけを見られるようにするため)。<br>
+    移行元のデータ(スタッフ${n}人分)は消さずに残ります。移行が終わるまで、一般スタッフには「移行作業中」と表示されます。<br>
+    <button id="migrate-btn" class="primary" style="margin-top:14px;">移行する</button>
+    <div id="migrate-status" style="margin-top:10px;font-size:13px;"></div></div>`;
+  const btn = document.getElementById("migrate-btn");
+  const status = document.getElementById("migrate-status");
+  btn.onclick = async ()=>{
+    btn.disabled = true;
+    status.textContent = "移行しています…";
+    try{
+      const r = await migrateToPerStaff(legacy);
+      status.textContent = `移行しました(スタッフ${r.staff}人、変更履歴${r.history}件)。画面を読み込み直します…`;
+      setTimeout(()=> window.location.reload(), 2000);
+    }catch(e){
+      console.error("移行に失敗", e);
+      status.textContent = "移行に失敗しました:" + (e.message || e) + "(移行元のデータはそのままです)";
+      btn.disabled = false;
+    }
+  };
 }
 
 function startApp(){
@@ -4624,27 +4797,57 @@ function startApp(){
     }
   }
 
-  // データ本体(staff/years)をリアルタイム購読。誰かが保存すると全員の画面に自動反映される
-  onValue(stateRef, (snapshot)=> handleRemoteState(snapshot.val()), (err)=>{
-    // メンバー表に載っていない(ログイン未設定・退職・別店舗など)と、DBのルールで読み取りを拒否される
+  // ---- データ本体の購読(段階3:スタッフ1人ずつ)。誰かが保存すると全員の画面に自動反映される ----
+  let access = {mode:"pending"};
+  let staffMapCache = null, metaCache = null, nullHandled = false;
+  function composeAndHandle(){
+    if(staffMapCache === null || metaCache === null) return;
+    const staff = staffArrayFromMap(staffMapCache);
+    handleRemoteState(staff.length ? {staff, years: metaCache?.years || [], updatedAt: metaCache?.updatedAt || null} : null);
+  }
+  const onLoadError = (err)=>{
+    if(!auth.currentUser) return; // ログアウトで購読が打ち切られただけ(この後ページを読み込み直す)
     console.error("データを読み込めませんでした", err);
-    if(!firstLoadDone){
-      document.getElementById("main").innerHTML = `<div style="padding:30px;line-height:1.8;">この店舗のデータを表示する権限がありません。<br>店舗の管理者に、ログインの設定を確認してもらってください。<br><span style="color:var(--muted);font-size:12px;">(ログインID: ${String(getLoginCode()).replace(/[<>&"]/g,"")})</span><br><button id="denied-logout" class="primary" style="margin-top:14px;">ログアウト</button></div>`;
-      document.getElementById("denied-logout").onclick = ()=> signOut(auth); // 別の人でログインし直せるように(ログアウト後はページが読み込み直される)
+    if(!firstLoadDone) showAccessDenied();
+  };
+  determineAccess().then(a=>{
+    access = a;
+    if(a.mode === "full"){
+      onValue(staffRootRef, snap=>{ staffMapCache = snap.val() || {}; composeAndHandle(); }, onLoadError);
+      reloadStateFromServer = async ()=>{ staffMapCache = (await get(staffRootRef)).val() || {}; composeAndHandle(); };
+      subscribeHistory();
+    } else if(a.mode === "self"){
+      // 一般スタッフ:自分のレコードだけ。変更履歴は読めない(追加だけできる)
+      const myRef = staffRef(a.staffId);
+      const toMap = v=> v ? {[a.staffId]: v} : {};
+      onValue(myRef, snap=>{ staffMapCache = toMap(snap.val()); composeAndHandle(); }, onLoadError);
+      reloadStateFromServer = async ()=>{ staffMapCache = toMap((await get(myRef)).val()); composeAndHandle(); };
+      state.history = []; lastServerHistory = []; historyLoaded = true;
+    } else if(a.mode === "maintenance"){
+      showMaintenance(); return;
+    } else {
+      showAccessDenied(); return;
     }
+    onValue(metaRef, snap=>{ metaCache = snap.val() || {}; composeAndHandle(); }, onLoadError);
   });
-  reloadStateFromServer = async ()=>{ const s = await get(stateRef); handleRemoteState(s.val()); };
   function handleRemoteState(val){
     if(val === null){
-      if(!stateLoaded){
+      // 新しい保存先(スタッフ1人ずつ)がまだ空
+      if(stateLoaded || nullHandled) return;
+      nullHandled = true;
+      if(!access.canAdmin){ showMaintenance(); return; } // 移行・新規作成ができるのは管理者だけ
+      get(stateRef).then(snap=>{
+        if(snap.exists()){ showMigrationScreen(snap.val()); return; } // 旧形式のデータがある → 移行
+        // どちらも空 = 新しい店舗。初期データ(システム管理者1人)で始める
         const seed = defaultCoreState();
         state.staff = seed.staff;
         state.years = seed.years;
-        lastServerCore = JSON.parse(JSON.stringify({staff:state.staff, years:state.years}));
+        lastServerCore = {staff: [], years: []}; // 基準点を空にして、初期データ全体を「追加」として保存させる
         stateLoaded = true;
+        currentPersonName = resolveCurrentPersonName();
         tryFirstRender();
         saveState();
-      }
+      }).catch(e=>{ console.error(e); showAccessDenied(); });
       return;
     }
     const migrated = migrateCoreState(val);
@@ -4687,7 +4890,7 @@ function startApp(){
     state.staff = state.staff.filter(keep);
     if(lastServerCore) lastServerCore.staff = lastServerCore.staff.filter(keep);
     requestRender();
-  });
+  }, (err)=> console.warn("削除したスタッフの記録を読めませんでした(一般スタッフは読めない設定)", err));
 
   // シフトの日付一覧をリアルタイム購読。他の端末で取り込み・再取り込み・削除があったら、
   // 手元に持っている古いシフトデータを捨てて取り直す
@@ -4706,20 +4909,11 @@ function startApp(){
     if(["shifts","ninebox"].includes(activeTab)) requestRender();
   });
 
-  // 変更履歴を別パスでリアルタイム購読(本体とは独立して増減する)
-  migrateLegacyHistoryIfNeeded().then(()=>{
+  // 変更履歴をリアルタイム購読(本体とは独立して増減する。読めるのは管理者・評価者だけ)
+  function subscribeHistory(){
     onValue(historyRef, (snapshot)=>{
-      const val = snapshot.val();
-      if(val === null){
-        if(!historyLoaded){
-          state.history = [];
-          lastServerHistory = [];
-          historyLoaded = true;
-          tryFirstRender();
-        }
-        return;
-      }
-      const latestHistory = Array.isArray(val) ? val : [];
+      const latestHistory = entriesOf(snapshot.val()).map(([, h])=>h).filter(h=> h && h.id)
+        .sort((x,y)=> (y.ts||"").localeCompare(x.ts||""));
       if(firstLoadDone){
         const merged = mergeHistoryForSave(latestHistory, state.history, lastServerHistory);
         const changed = !sameVal(merged, state.history);
@@ -4729,12 +4923,18 @@ function startApp(){
         return;
       }
       state.history = latestHistory;
-      lastServerHistory = JSON.parse(JSON.stringify(state.history));
+      lastServerHistory = JSON.parse(JSON.stringify(latestHistory));
       historyLoaded = true;
       tryFirstRender();
+    }, (err)=>{
+      console.warn("変更履歴を読めませんでした", err);
+      if(!historyLoaded){ state.history = []; lastServerHistory = []; historyLoaded = true; tryFirstRender(); }
     });
-  });
+  }
 }
+
+/* 開発用:エミュレーターにつないだときだけ、動作確認のために中身を外から触れるようにする(公開ページでは作られない) */
+if(USE_EMULATOR) window.__atsTest = { get state(){ return state; }, saveState, render, currentStaffObj, isCurrentUserAdmin, isPrivilegedUser, logGenericChange };
 
 /* ページを再読み込みするボタン。ホーム画面に追加してアプリ化して使うと
    Safariの更新ボタンが使えなくなるため、代わりにアプリ内に用意している。 */
