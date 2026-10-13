@@ -690,13 +690,6 @@ function merge3(base, local, latest){
   }
   return local; // 同じ項目を両方が変えた場合は、今保存しようとしている側を優先
 }
-function mergeStateForSave(latest, local, base){
-  const merged = {...latest};
-  merged.staff = merge3(base?.staff, local.staff||[], latest.staff||[]);
-  // 年度は増える一方の情報なので、両方を合わせる
-  merged.years = Array.from(new Set([...(latest.years||[]), ...(local.years||[])])).sort();
-  return merged;
-}
 /* 変更履歴は「追加」と「削除」だけのログなので、id単位の3-wayマージで正しく合成できる。
    自分が追加した分は足す、自分が削除した分は(他人がまだ持っていても)消す、
    それ以外(他人が追加/削除した分)は最新データをそのまま尊重する。 */
@@ -751,15 +744,16 @@ async function saveStateNow(){
     const lp = profileOf(l), bp = profileOf(b);
     if(admin && !sameVal(lp, bp)){
       writes.push(runTransaction(staffRef(id, "profile"), cur=>{
-        const latest = cur ? profileOf(migrateStaffObj({...cur, yearData:{}, growthNotes:[]})) : null;
-        return latest ? merge3(bp, lp, latest) : lp;
-      }, {applyLocally:false}).then(committed));
+        if(!cur) return undefined; // 別の端末で削除された(半端なレコードを作らない)
+        return merge3(bp, lp, profileOf(migrateStaffObj({...cur, yearData:{}, growthNotes:[]})));
+      }, {applyLocally:false}));
     }
     if(!sameVal(l.yearData||{}, b.yearData||{})){
       if(privileged){
         writes.push(runTransaction(staffRef(id, "yearData"), cur=>{
-          const latest = cur ? migrateStaffObj({...lp, yearData: cur, growthNotes:[]}).yearData : null;
-          return latest ? merge3(b.yearData||{}, l.yearData||{}, latest) : (l.yearData||{});
+          // まだ評価が1つも無い人は cur が空。その場合は手元の分をそのまま書く
+          const latest = cur ? migrateStaffObj({...lp, yearData: cur, growthNotes:[]}).yearData : {};
+          return merge3(b.yearData||{}, l.yearData||{}, latest);
         }, {applyLocally:false}).then(committed));
       } else {
         const upd = {};
@@ -838,8 +832,9 @@ function resolveCurrentPersonName(){
   return match ? match.name : null;
 }
 /* 権限まわり:今ログインしている人のスタッフレコードと、その人が管理者かどうか。
-   まだサーバー側(Firebaseセキュリティルール)では強制していない「見た目レベル」の制御で、
-   本当の意味でのアクセス制御ではない点に注意(開発者ツールから操作すれば技術的には回避できる)。 */
+   画面の出し分けはここで行い、実際に読み書きできる範囲はFirebaseのルール(メンバー表 members と systemAdmins)で決まる。
+   accessInfo は起動時に determineAccess() で決めた「読める範囲」で、画面の判定もこれを超えないようにする */
+let accessInfo = null;
 function currentStaffObj(){
   if(!state) return null;
   return (state.staff||[]).find(s=>s.name===currentPersonName) || null;
@@ -871,8 +866,9 @@ function evalStatus(staffObj, year, period){
 }
 const EVAL_STATUS_LABEL = {todo:"未入力", doing:"入力中", done:"確定済み", skip:"対象外"};
 function isCurrentUserAdmin(){
+  if(!accessInfo?.canAdmin) return false; // ルール上管理者でなければ、レコードに管理者と書いてあっても管理者として動かない
   const s = currentStaffObj();
-  return !!(s && s.isAdmin);
+  return s ? !!(s.isAdmin || accessInfo.sys) : !!accessInfo.sys; // スタッフ一覧にいないシステム管理者(新しい店舗の立ち上げ時など)も管理者
 }
 
 /* ---- 店舗メンバー表(members/{店舗ID}/{社員CD}: "admin"|"evaluator"|"staff") ----
@@ -1347,8 +1343,9 @@ const GENERAL_TABS = [
 /* 評価者・管理者は権限者用(ADMIN_TABS)、それ以外は一般用(GENERAL_TABS)。
    「評価者は管理者と同じものが見られる」という方針のため、isAdminだけでなくisEvaluatorも見る。 */
 function isPrivilegedUser(){
+  if(accessInfo?.mode !== "full") return false; // 全員分を読めない端末では、管理者・評価者の画面を出さない
   const s = currentStaffObj();
-  return !!(s && (s.isAdmin || s.isEvaluator));
+  return s ? !!(s.isAdmin || s.isEvaluator || accessInfo.sys) : !!accessInfo.sys;
 }
 /* 評価者でありながら自分も評価される人(社員以外の評価者)は、
    「評価者メニュー」と「自分の評価(一般スタッフと同じ画面)」を切り替えて使う。この端末だけの表示設定 */
@@ -3825,7 +3822,7 @@ function renderBackupDetail(key, meta){
       const id = String(s.id);
       deletedStaffIds.delete(id);
       try{ await set(ref(db, `stores/${STORE_ID}/ats/deletedStaff/${id}`), null); }catch(e){ console.error(e); }
-      const restored = migrateCoreState({staff:[JSON.parse(JSON.stringify(s))], years: state.years}).staff[0];
+      const restored = normalizeLegacyStaff([s], [...state.staff, ...bStaff])[0];
       if(!state.staff.some(x=>String(x.id)===id)) state.staff.push(restored);
       logGenericChange(s.name, "スタッフ", "削除", `バックアップから復元(${fmtBackupTime(meta.ts)})`);
       await saveState();
@@ -3848,7 +3845,7 @@ function renderBackupDetail(key, meta){
     try{
       // スタッフ1人ずつの形に直して、全員分をまとめて置き換える(並び順はバックアップの順)
       const records = {};
-      bStaff.forEach((st, i)=>{ if(st && st.id !== undefined) records[String(st.id)] = toRecord({...st, order: i}); });
+      normalizeLegacyStaff(bStaff, state.staff).forEach((st, i)=>{ if(st.id !== undefined) records[String(st.id)] = toRecord({...st, order: i}); });
       await set(staffRootRef, records);
       await set(ref(db, `stores/${STORE_ID}/ats/meta/years`), years);
       const server = migrateCoreState(JSON.parse(JSON.stringify({staff: staffArrayFromMap(records), years})));
@@ -3870,7 +3867,7 @@ function renderBackupDetail(key, meta){
 
 /* ============================== 新着の目印(NEW・赤丸) ==============================
    「見た」記録は人ごとに stores/.../ats/seen/{スタッフid} に置く。端末をまたいで既読になり、
-   評価データ本体(ats/state)とは別の場所なので、本体の保存・合成(merge3)やバックアップには関わらない。
+   評価データ本体(ats/staff)とは別の場所なので、本体の保存・合成(merge3)やバックアップには関わらない。
      results/{年度|時期}         … 最後に見た自分の結果の指紋(確定後に中身が変わると「更新」になる)
      notes/{メモid}              … 他の人が書いたメモを見た印
      selfs/{年度|時期|スタッフid} … (評価者)担当の人の自己評価を見た指紋(出し直すと再びNEW)
@@ -4690,15 +4687,15 @@ let appStarted = false;
    メンバー表に載っていない人は、ルール上どのデータも読めない。 */
 async function determineAccess(){
   const code = String(getLoginCode());
-  let role = null, sys = false;
-  try{ role = (await get(ref(db, `members/${STORE_ID}/${code}`))).val(); }catch(e){}
-  try{ sys = (await get(ref(db, `systemAdmins/${code}`))).val() === true; }catch(e){}
+  // 読めない(ルールで拒否)なら null 扱い。通信エラーなど拒否以外の失敗は、そのまま投げて「通信エラー」と表示する
+  const read = async r=>{ try{ return (await get(r)).val(); }catch(e){ if(/permission/i.test(e.message||"")) return null; throw e; } };
+  const role = await read(ref(db, `members/${STORE_ID}/${code}`));
+  const sys = (await read(ref(db, `systemAdmins/${code}`))) === true;
   const canAdmin = sys || role === "admin";
-  if(canAdmin || role === "evaluator") return {mode:"full", canAdmin};
+  if(canAdmin || role === "evaluator") return {mode:"full", canAdmin, sys};
   if(role === "staff"){
-    let id = null;
-    try{ id = (await get(codeIndexRef(code))).val(); }catch(e){}
-    return id ? {mode:"self", staffId: String(id)} : {mode:"maintenance"};
+    const id = await read(codeIndexRef(code));
+    return id ? {mode:"self", staffId: String(id), canAdmin:false, sys:false} : {mode:"notReady"};
   }
   return {mode:"denied"};
 }
@@ -4713,25 +4710,58 @@ function showAccessDenied(){
 function showMaintenance(){
   showBlockingMessage(`ただいまデータの移行作業中です。<br>しばらくしてから、ページを読み込み直してください。`);
 }
-/* 旧形式(ats/state に全員分)から、スタッフ1人ずつの形へ移す。移行元は消さない。管理者が1回だけ行う */
-async function migrateToPerStaff(legacy){
-  const core = migrateCoreState(JSON.parse(JSON.stringify({staff: legacy.staff || [], years: legacy.years || []})));
-  const codeByName = new Map(core.staff.map(st=>[st.name, String(st.code ?? "")]));
+function showNotReady(){
+  showBlockingMessage(`まだ使える状態になっていません(データの移行作業中か、ログインの設定が反映される前です)。<br>しばらくしてから、ページを読み込み直してください。続く場合は店舗の管理者に連絡してください。`);
+}
+/* 旧形式のスタッフ配列(移行元・移行前に作られたバックアップ)を、1人ずつの形で書ける状態にそろえる。
+   ・社員CDの文字列化などの補完(migrateStaffObj)
+   ・メモに書き手の社員CD(authorCode)を補う(以前のメモは名前しか持っていない。同名の人がいる場合は補わない)
+   ・idの無いメモは書けないので、作り直したidを付ける */
+function normalizeLegacyStaff(staffArr, nameSources = []){
+  const all = [...staffArr, ...nameSources];
+  const codesByName = new Map();
+  all.forEach(st=>{ if(st?.name) codesByName.set(st.name, new Set([...(codesByName.get(st.name)||[]), String(st.code ?? "")])); });
+  return staffArr.filter(Boolean).map(st=>{
+    st = migrateStaffObj(JSON.parse(JSON.stringify(st)));
+    st.growthNotes = (st.growthNotes||[]).filter(Boolean).map((n, i)=>{
+      const note = {...n};
+      if(!note.id) note.id = `n-mig-${st.id}-${i}`;
+      if(!note.ts) note.ts = new Date(0).toISOString();
+      if(typeof note.text !== "string") note.text = String(note.text ?? "");
+      const codes = codesByName.get(note.author);
+      if(note.authorCode === undefined && codes && codes.size === 1) note.authorCode = [...codes][0];
+      return note;
+    });
+    return st;
+  });
+}
+/* 旧形式(ats/state に全員分)から、スタッフ1人ずつの形へ移す。移行元は消さない。管理者が1回だけ行う。
+   ボタンを押した時点の最新を読み直して移す */
+async function migrateToPerStaff(){
+  const legacy = (await get(stateRef)).val() || {};
+  const srcStaff = (Array.isArray(legacy.staff) ? legacy.staff : Object.values(legacy.staff || {})).filter(Boolean);
+  const staff = normalizeLegacyStaff(srcStaff).filter(st=> !deletedStaffIds.has(String(st.id)));
+  const years = (legacy.years && legacy.years.length) ? legacy.years : [INITIAL_YEAR];
   const records = {}, codeIndex = {};
-  core.staff.forEach((st, i)=>{
+  let notes = 0, periods = 0;
+  staff.forEach((st, i)=>{
     st.order = i; // 今の並び順を保つ
-    (st.growthNotes||[]).forEach(n=>{ if(n && n.authorCode === undefined && codeByName.get(n.author)) n.authorCode = codeByName.get(n.author); });
     records[String(st.id)] = toRecord(st);
+    notes += st.growthNotes.length;
+    Object.values(st.yearData||{}).forEach(yd=>{ periods += Object.keys(yd||{}).length; });
     const c = String(st.code ?? "").trim();
     if(c && !/[.#$\[\]\/]/.test(c)) codeIndex[c] = String(st.id);
   });
+  const srcHist = entriesOf((await get(historyRef)).val()).map(([, h])=>h).filter(Boolean);
   const hist = {};
-  entriesOf((await get(historyRef)).val()).forEach(([, h])=>{ if(h && h.id) hist[h.id] = h; });
+  srcHist.forEach((h, i)=>{ const id = h.id || `h-mig-${i}`; hist[id] = {...h, id}; });
   const now = new Date().toISOString();
-  await update(ref(db, `stores/${STORE_ID}/ats`), { staff: records, meta: {years: core.years, updatedAt: now, migratedAt: now}, history: hist, codeIndex });
-  return {staff: core.staff.length, history: Object.keys(hist).length};
+  await update(ref(db, `stores/${STORE_ID}/ats`), { staff: records, meta: {years, updatedAt: now, migratedAt: now}, history: hist, codeIndex });
+  return {srcStaff: srcStaff.length, staff: staff.length, skippedDeleted: srcStaff.length - staff.length, notes, periods, srcHistory: srcHist.length, history: Object.keys(hist).length};
 }
+let migrationScreenOpen = false; // 移行画面を出している間は、届いたデータで通常の画面に切り替えない(移行結果の件数を読んでもらうため)
 function showMigrationScreen(legacy){
+  migrationScreenOpen = true;
   const n = Array.isArray(legacy?.staff) ? legacy.staff.length : 0;
   document.getElementById("main").innerHTML = `<div style="padding:30px;line-height:1.8;max-width:600px;">
     <div style="font-weight:800;font-size:16px;margin-bottom:8px;">データの移行が必要です</div>
@@ -4745,9 +4775,9 @@ function showMigrationScreen(legacy){
     btn.disabled = true;
     status.textContent = "移行しています…";
     try{
-      const r = await migrateToPerStaff(legacy);
-      status.textContent = `移行しました(スタッフ${r.staff}人、変更履歴${r.history}件)。画面を読み込み直します…`;
-      setTimeout(()=> window.location.reload(), 2000);
+      const r = await migrateToPerStaff();
+      status.innerHTML = `移行しました。<br>スタッフ:移行元 ${r.srcStaff}人 → 移行先 ${r.staff}人(削除済みとして除いた人 ${r.skippedDeleted}人)<br>評価の期間データ:${r.periods}件 / 一言メモ:${r.notes}件<br>変更履歴:移行元 ${r.srcHistory}件 → 移行先 ${r.history}件<br>この数字を控えてから、下のボタンで画面を読み込み直してください。<br><button id="migrate-reload" class="primary" style="margin-top:10px;">読み込み直す</button>`;
+      document.getElementById("migrate-reload").onclick = ()=> window.location.reload();
     }catch(e){
       console.error("移行に失敗", e);
       status.textContent = "移行に失敗しました:" + (e.message || e) + "(移行元のデータはそのままです)";
@@ -4801,7 +4831,7 @@ function startApp(){
   let access = {mode:"pending"};
   let staffMapCache = null, metaCache = null, nullHandled = false;
   function composeAndHandle(){
-    if(staffMapCache === null || metaCache === null) return;
+    if(staffMapCache === null || metaCache === null || migrationScreenOpen) return;
     const staff = staffArrayFromMap(staffMapCache);
     handleRemoteState(staff.length ? {staff, years: metaCache?.years || [], updatedAt: metaCache?.updatedAt || null} : null);
   }
@@ -4812,6 +4842,7 @@ function startApp(){
   };
   determineAccess().then(a=>{
     access = a;
+    accessInfo = a;
     if(a.mode === "full"){
       onValue(staffRootRef, snap=>{ staffMapCache = snap.val() || {}; composeAndHandle(); }, onLoadError);
       reloadStateFromServer = async ()=>{ staffMapCache = (await get(staffRootRef)).val() || {}; composeAndHandle(); };
@@ -4823,12 +4854,15 @@ function startApp(){
       onValue(myRef, snap=>{ staffMapCache = toMap(snap.val()); composeAndHandle(); }, onLoadError);
       reloadStateFromServer = async ()=>{ staffMapCache = toMap((await get(myRef)).val()); composeAndHandle(); };
       state.history = []; lastServerHistory = []; historyLoaded = true;
-    } else if(a.mode === "maintenance"){
-      showMaintenance(); return;
+    } else if(a.mode === "notReady"){
+      showNotReady(); return;
     } else {
       showAccessDenied(); return;
     }
     onValue(metaRef, snap=>{ metaCache = snap.val() || {}; composeAndHandle(); }, onLoadError);
+  }).catch(e=>{
+    console.error("起動時の確認に失敗", e);
+    showBlockingMessage(`通信エラーで読み込めませんでした。<br>通信状況を確認して、ページを読み込み直してください。`);
   });
   function handleRemoteState(val){
     if(val === null){
