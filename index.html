@@ -385,7 +385,9 @@ function entriesOf(val){
   if(Array.isArray(val)) return val.map((v,i)=>[String(i), v]).filter(([,v])=> v !== null && v !== undefined);
   return Object.entries(val || {});
 }
-function staffArrayFromMap(val){ return entriesOf(val).map(([id, rec])=> fromRecord(id, rec)).sort(staffOrder); }
+/* 受け取ったデータはコピーしてから使う。画面は state.staff を直接書き換えるので、共有したままだと
+   手元のキャッシュ(サーバーの値)まで書き換わり、未保存の入力が「保存済み」に見えてしまう */
+function staffArrayFromMap(val){ return entriesOf(val).map(([id, rec])=> fromRecord(id, JSON.parse(JSON.stringify(rec)))).sort(staffOrder); }
 const auth = getAuth(fbApp);
 if(USE_EMULATOR) connectAuthEmulator(auth, "http://127.0.0.1:9099", {disableWarnings:true});
 const LOGIN_DOMAIN = "gaisenmon.local";
@@ -717,6 +719,7 @@ function saveState(){
    ・一言メモは1件ずつ書く(書いた本人か、管理者・評価者だけが書ける)。
    保存した結果は、購読しているデータの更新として戻ってきて handleRemoteState で取り込まれる。 */
 const SELF_FIELDS = ["selfScores","selfGoal","selfSubmitted"];
+let serverMetaYears = []; // サーバー上の年度一覧(読み込み時の補完=空なら初期年度を足す処理をかける前の値。年度を保存するかの判定に使う)
 function committed(res){ if(!res.committed) throw new Error("not committed"); }
 async function saveStateNow(){
   migrateCoreState({staff: state.staff, years: state.years}); // 入社前の期間の自動対象外などを手元にも反映
@@ -751,7 +754,9 @@ async function saveStateNow(){
     if(!sameVal(l.yearData||{}, b.yearData||{})){
       if(privileged){
         writes.push(runTransaction(staffRef(id, "yearData"), cur=>{
-          // まだ評価が1つも無い人は cur が空。その場合は手元の分をそのまま書く
+          // まだ評価が1つも無い人は cur が空。その場合は手元の分をそのまま書く。
+          // 基準点には評価があったのに空 = 別の端末で削除された人なので、半端なレコードを作らないよう中止する
+          if(!cur && Object.keys(b.yearData||{}).length) return undefined;
           const latest = cur ? migrateStaffObj({...lp, yearData: cur, growthNotes:[]}).yearData : {};
           return merge3(b.yearData||{}, l.yearData||{}, latest);
         }, {applyLocally:false}).then(committed));
@@ -767,12 +772,13 @@ async function saveStateNow(){
     const noteUpd = {};
     Object.entries(ln).forEach(([nid, n])=>{ if(!sameVal(n, bn[nid])) noteUpd[nid] = n; });
     Object.keys(bn).forEach(nid=>{ if(!(nid in ln)) noteUpd[nid] = null; });
-    if(Object.keys(noteUpd).length) writes.push(update(staffRef(id, "growthNotes"), noteUpd));
+    // メモは、その人のレコードがまだある(別の端末で削除されていない)ことを確かめてから書く
+    if(Object.keys(noteUpd).length) writes.push(get(staffRef(id, "profile")).then(snap=> snap.exists() ? update(staffRef(id, "growthNotes"), noteUpd) : null));
   }
   if(admin) base.forEach(b=>{ if(!localIds.has(String(b.id))) writes.push(set(staffRef(String(b.id)), null)); }); // 削除したスタッフ
   // 年度は増える一方の情報なので、サーバー側と合わせる(書けるのは管理者だけ)
   const localYears = state.years || [];
-  if(admin && localYears.some(y=> !(lastServerCore?.years||[]).includes(y))){
+  if(admin && localYears.some(y=> !serverMetaYears.includes(y))){
     writes.push(runTransaction(ref(db, `stores/${STORE_ID}/ats/meta/years`), cur=>
       Array.from(new Set([...(Array.isArray(cur) ? cur : []), ...localYears])).sort()
     , {applyLocally:false}).then(committed));
@@ -3834,6 +3840,12 @@ function renderBackupDetail(key, meta){
   });
   const whole = document.createElement("div");
   whole.style.cssText = "margin-top:12px;padding-top:12px;border-top:1px solid var(--line);display:flex;align-items:center;gap:10px;flex-wrap:wrap;";
+  if(bStaff.length === 0){
+    // 一覧だけが残り、中身が無いバックアップ(作成の途中で失敗したもの)。戻すと全員分が消えるので、戻せないようにする
+    whole.innerHTML = `<div style="font-size:12px;color:var(--muted);">このバックアップには中身(スタッフのデータ)がありません。全体を戻すことはできません。</div>`;
+    box.appendChild(whole);
+    return box;
+  }
   whole.innerHTML = `<div style="flex:1;min-width:200px;font-size:12px;color:var(--muted);">データ全体をこの時点に戻します。これより後に入力された評価・変更はすべて消えます(戻す直前の状態もバックアップに残ります)。</div>`;
   const wb = document.createElement("button");
   wb.className = "btn-danger"; wb.textContent = "全体をこの時点に戻す";
@@ -4740,6 +4752,9 @@ function normalizeLegacyStaff(staffArr, nameSources = []){
 async function migrateToPerStaff(){
   const legacy = (await get(stateRef)).val() || {};
   const srcStaff = (Array.isArray(legacy.staff) ? legacy.staff : Object.values(legacy.staff || {})).filter(Boolean);
+  let srcNotes = 0, srcPeriods = 0;
+  srcStaff.forEach(st=>{ srcNotes += (Array.isArray(st.growthNotes) ? st.growthNotes : Object.values(st.growthNotes||{})).filter(Boolean).length;
+    Object.values(st.yearData||{}).forEach(yd=>{ srcPeriods += Object.keys(yd||{}).length; }); });
   const staff = normalizeLegacyStaff(srcStaff).filter(st=> !deletedStaffIds.has(String(st.id)));
   const years = (legacy.years && legacy.years.length) ? legacy.years : [INITIAL_YEAR];
   const records = {}, codeIndex = {};
@@ -4757,7 +4772,7 @@ async function migrateToPerStaff(){
   srcHist.forEach((h, i)=>{ const id = h.id || `h-mig-${i}`; hist[id] = {...h, id}; });
   const now = new Date().toISOString();
   await update(ref(db, `stores/${STORE_ID}/ats`), { staff: records, meta: {years, updatedAt: now, migratedAt: now}, history: hist, codeIndex });
-  return {srcStaff: srcStaff.length, staff: staff.length, skippedDeleted: srcStaff.length - staff.length, notes, periods, srcHistory: srcHist.length, history: Object.keys(hist).length};
+  return {srcStaff: srcStaff.length, staff: staff.length, skippedDeleted: srcStaff.length - staff.length, srcNotes, notes, srcPeriods, periods, srcHistory: srcHist.length, history: Object.keys(hist).length};
 }
 let migrationScreenOpen = false; // 移行画面を出している間は、届いたデータで通常の画面に切り替えない(移行結果の件数を読んでもらうため)
 function showMigrationScreen(legacy){
@@ -4776,7 +4791,7 @@ function showMigrationScreen(legacy){
     status.textContent = "移行しています…";
     try{
       const r = await migrateToPerStaff();
-      status.innerHTML = `移行しました。<br>スタッフ:移行元 ${r.srcStaff}人 → 移行先 ${r.staff}人(削除済みとして除いた人 ${r.skippedDeleted}人)<br>評価の期間データ:${r.periods}件 / 一言メモ:${r.notes}件<br>変更履歴:移行元 ${r.srcHistory}件 → 移行先 ${r.history}件<br>この数字を控えてから、下のボタンで画面を読み込み直してください。<br><button id="migrate-reload" class="primary" style="margin-top:10px;">読み込み直す</button>`;
+      status.innerHTML = `移行しました。<br>スタッフ:移行元 ${r.srcStaff}人 → 移行先 ${r.staff}人(削除済みとして除いた人 ${r.skippedDeleted}人)<br>評価の期間データ:移行元 ${r.srcPeriods}件 → 移行先 ${r.periods}件<br>一言メモ:移行元 ${r.srcNotes}件 → 移行先 ${r.notes}件<br>(削除済みの人を除いた場合、その人の分だけ移行先が少なくなります)<br>変更履歴:移行元 ${r.srcHistory}件 → 移行先 ${r.history}件<br>この数字を控えてから、下のボタンで画面を読み込み直してください。<br><button id="migrate-reload" class="primary" style="margin-top:10px;">読み込み直す</button>`;
       document.getElementById("migrate-reload").onclick = ()=> window.location.reload();
     }catch(e){
       console.error("移行に失敗", e);
@@ -4832,8 +4847,10 @@ function startApp(){
   let staffMapCache = null, metaCache = null, nullHandled = false;
   function composeAndHandle(){
     if(staffMapCache === null || metaCache === null || migrationScreenOpen) return;
+    // 配列はコピーして渡す(同じ配列を共有すると、画面で年度を足したときにサーバー側の値まで変わってしまう)
+    serverMetaYears = Array.isArray(metaCache?.years) ? [...metaCache.years] : [];
     const staff = staffArrayFromMap(staffMapCache);
-    handleRemoteState(staff.length ? {staff, years: metaCache?.years || [], updatedAt: metaCache?.updatedAt || null} : null);
+    handleRemoteState(staff.length ? {staff, years: [...serverMetaYears], updatedAt: metaCache?.updatedAt || null} : null);
   }
   const onLoadError = (err)=>{
     if(!auth.currentUser) return; // ログアウトで購読が打ち切られただけ(この後ページを読み込み直す)
@@ -4870,8 +4887,11 @@ function startApp(){
       if(stateLoaded || nullHandled) return;
       nullHandled = true;
       if(!access.canAdmin){ showMaintenance(); return; } // 移行・新規作成ができるのは管理者だけ
-      get(stateRef).then(snap=>{
-        if(snap.exists()){ showMigrationScreen(snap.val()); return; } // 旧形式のデータがある → 移行
+      get(stateRef).catch(e=>{
+        if(/permission/i.test(e.message||"")) return null; // 最終版のルールでは旧データは誰も読めない = 移行済みの環境
+        throw e;
+      }).then(snap=>{
+        if(snap && snap.exists()){ showMigrationScreen(snap.val()); return; } // 旧形式のデータがある → 移行
         // どちらも空 = 新しい店舗。初期データ(システム管理者1人)で始める
         const seed = defaultCoreState();
         state.staff = seed.staff;
