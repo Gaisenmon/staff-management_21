@@ -719,7 +719,8 @@ function saveState(){
    ・一言メモは1件ずつ書く(書いた本人か、管理者・評価者だけが書ける)。
    保存した結果は、購読しているデータの更新として戻ってきて handleRemoteState で取り込まれる。 */
 const SELF_FIELDS = ["selfScores","selfGoal","selfSubmitted"];
-let serverMetaYears = []; // サーバー上の年度一覧(読み込み時の補完=空なら初期年度を足す処理をかける前の値。年度を保存するかの判定に使う)
+let serverMetaYears = [];
+let serverDefaultPeriod = null; // 管理者の端末が決めた「初期表示の時期」(meta/defaultPeriod)。一般スタッフの端末はこれを使う // サーバー上の年度一覧(読み込み時の補完=空なら初期年度を足す処理をかける前の値。年度を保存するかの判定に使う)
 function committed(res){ if(!res.committed) throw new Error("not committed"); }
 async function saveStateNow(){
   migrateCoreState({staff: state.staff, years: state.years}); // 入社前の期間の自動対象外などを手元にも反映
@@ -1491,14 +1492,29 @@ function applyDefaultYearAndPeriod(){
   defaultsApplied = true;
   let { period, fiscalYear } = computeCurrentPeriodDefault();
   fiscalYear = state.years.includes(fiscalYear) ? fiscalYear : state.years[state.years.length-1];
-  // 日付ベースの時期が全員確定済みなら、まだ確定しきっていない時期まで自動で進める
-  // (一般スタッフの端末には本人の分しかなく「全員確定」を判定できないので、進めずに日付どおりの時期を使う)
-  for(let i=0; isPrivilegedUser() && i<PERIODS.length*state.years.length; i++){
-    if(!isPeriodFullyConfirmed(fiscalYear, period)) break;
-    const next = advancePeriod(fiscalYear, period);
-    if(next.period===period && next.fiscalYear===fiscalYear) break; // これ以上進めない
-    period = next.period;
-    fiscalYear = next.fiscalYear;
+  if(isPrivilegedUser()){
+    // 日付ベースの時期が全員確定済みなら、まだ確定しきっていない時期まで自動で進める
+    for(let i=0; i<PERIODS.length*state.years.length; i++){
+      if(!isPeriodFullyConfirmed(fiscalYear, period)) break;
+      const next = advancePeriod(fiscalYear, period);
+      if(next.period===period && next.fiscalYear===fiscalYear) break; // これ以上進めない
+      period = next.period;
+      fiscalYear = next.fiscalYear;
+    }
+    // 一般スタッフの端末は本人の分しか持たず「全員確定」を判定できないので、管理者の端末が決めた結果を共有する
+    if(isCurrentUserAdmin() && (serverDefaultPeriod?.period !== period || serverDefaultPeriod?.fiscalYear !== fiscalYear)){
+      set(ref(db, `stores/${STORE_ID}/ats/meta/defaultPeriod`), {fiscalYear, period})
+        .catch(e=> console.warn("初期表示の時期を共有できませんでした", e));
+    }
+  } else {
+    // 管理者の端末が決めた時期と、日付どおりの時期のうち、新しいほうを使う
+    // (管理者がしばらく開いていないと、共有された時期が古いままのことがあるため)
+    const order = p=> Number(p.fiscalYear)*PERIODS.length + PERIODS.indexOf(p.period);
+    const shared = serverDefaultPeriod;
+    if(shared && PERIODS.includes(shared.period) && state.years.includes(shared.fiscalYear) && order(shared) > order({fiscalYear, period})){
+      period = shared.period;
+      fiscalYear = shared.fiscalYear;
+    }
   }
   selectedYear = fiscalYear;
   dashboardPeriod = period;
@@ -4849,6 +4865,7 @@ function startApp(){
     if(staffMapCache === null || metaCache === null || migrationScreenOpen) return;
     // 配列はコピーして渡す(同じ配列を共有すると、画面で年度を足したときにサーバー側の値まで変わってしまう)
     serverMetaYears = Array.isArray(metaCache?.years) ? [...metaCache.years] : [];
+    serverDefaultPeriod = metaCache?.defaultPeriod ? {...metaCache.defaultPeriod} : null;
     const staff = staffArrayFromMap(staffMapCache);
     handleRemoteState(staff.length ? {staff, years: [...serverMetaYears], updatedAt: metaCache?.updatedAt || null} : null);
   }
