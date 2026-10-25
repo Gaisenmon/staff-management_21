@@ -321,7 +321,9 @@
 </div>
 <div class="save-toast" id="toast">保存しました</div>
 
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<!-- シフトのExcel取り込み用(SheetJS)。npm版は0.18.5で止まっていて既知の脆弱性(CVE-2023-30533・CVE-2024-22363)があるため、
+     修正版を公式の配布元から読み込む。版を上げるときは、実際のシフト表で取り込み結果(セルの色の読み取り)が変わらないか確かめる -->
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script type="module">
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getDatabase, ref, set, get, onValue, runTransaction, update, connectDatabaseEmulator } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
