@@ -515,17 +515,26 @@ async function fetchServerCore(){
   return { staff, years: mSnap.val()?.years || [] };
 }
 /* サーバー上の最新(=全員で共有されている状態)を控える。未保存の手元の変更は含めない */
+/* 戻り値:控えられた(または控えるデータが無い)なら true、失敗したら false */
 async function takeSnapshot(reason){
-  if(!isCurrentUserAdmin()) return; // バックアップの読み書きはルール上、管理者だけ
+  if(!isCurrentUserAdmin()) return false; // バックアップの読み書きはルール上、管理者だけ
   try{
     const cur = await fetchServerCore();
-    if(!cur) return;
+    if(!cur) return true;
     const {date, time} = jstParts();
     const key = `${date}_${time}_${Math.random().toString(36).slice(2,6)}`;
     const meta = {...backupPayload(reason), staffCount: Array.isArray(cur.staff) ? cur.staff.length : 0};
     await set(backupRef(key), {...meta, staff: cur.staff, years: cur.years});
     await set(backupIndexRef(key), meta);
-  }catch(e){ console.error("バックアップに失敗", e); }
+    return true;
+  }catch(e){ console.error("バックアップに失敗", e); return false; }
+}
+/* 削除・一括確定・年度移行・全体復元など、戻すのが大変な操作の直前に使う。
+   控えを作れなかったら操作を中止する(以前は失敗しても操作が進み、「直前の状態はバックアップに残る」という案内と食い違っていた) */
+async function snapshotOrAbort(reason){
+  if(await takeSnapshot(reason)) return true;
+  showModal("操作の前のバックアップを作れなかったため、中止しました。\n通信状況を確認して、もう一度やり直してください。", ()=>{}, {confirmLabel:"わかりました", cancelLabel:"閉じる"});
+  return false;
 }
 let dailyBackupChecked = false;
 async function ensureDailyBackup(){
@@ -615,6 +624,7 @@ function migrateStaffObj(st){
         const beforeHire = isBeforeHire(st.hireDate, fy, period);
         if(beforeHire && !pd.exempt){ pd.exempt = true; pd.exemptAuto = true; }
         else if(!beforeHire && pd.exemptAuto){ pd.exempt = false; delete pd.exemptAuto; }
+        if(!pd.scores) pd.scores = emptyScores(); // 中身が空の欄はFirebaseに残らないので、読み込み時に補う(無いと点数の計算で止まる)
         if(!pd.selfScores) pd.selfScores = emptyScores();
         if(pd.selfGoal === undefined) pd.selfGoal = "";
         if(pd.selfSubmitted === undefined) pd.selfSubmitted = false;
@@ -838,6 +848,14 @@ async function saveStateNow(){
   showToast(waitNoticeGen !== null ? "通信が戻り、保存が終わりました" : "保存しました(全員に共有されます)");
   return true;
 }
+/* 画面の部品(innerHTML)に文字を差し込むときは必ずこれを通す。名前やシフト表の文字などに < " & が入っていても、
+   ただの文字として表示する(通さないと表示が崩れたり、悪意のある文字列が動いたりする)。
+   textContent・showModal・showToast は、もともと文字として表示するので不要 */
+function esc(v){
+  return String(v ?? "").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+/* 色として使ってよい値だけを通す(シフト表から取り込んだ色を style に入れるため) */
+function safeColor(v){ return /^#[0-9A-Fa-f]{3,8}$/.test(String(v)) ? v : "#999"; }
 function showToast(msg){
   const t = document.getElementById("toast");
   t.textContent = msg || "保存しました";
@@ -1194,7 +1212,7 @@ function renderYearPicker(){
   addBtn.style.cssText = "background:transparent;border:1px solid rgba(255,255,255,.3);color:#EFE5D6;border-radius:20px;padding:3px 12px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap;flex:none;";
   addBtn.onclick = ()=>{
     showModal(`${nextYear}年度を新しく追加します。全スタッフの評価データが未入力の状態で作成されます。よろしいですか?`, async ()=>{
-      await takeSnapshot(`${nextYear}年度への移行の前`);
+      if(!(await snapshotOrAbort(`${nextYear}年度への移行の前`))) return;
       state.staff.forEach(st=>{ st.yearData[nextYear] = emptyPeriods(); });
       state.years.push(nextYear);
       selectedYear = nextYear;
@@ -1252,7 +1270,7 @@ function renderTopRightContent(){
       addBtn2.onclick = ()=>{
         topMenuOpen = false;
         showModal(`${nextYear}年度を新しく追加します。全スタッフの評価データが未入力の状態で作成されます。よろしいですか?`, async ()=>{
-          await takeSnapshot(`${nextYear}年度への移行の前`);
+          if(!(await snapshotOrAbort(`${nextYear}年度への移行の前`))) return;
           state.staff.forEach(st=>{ st.yearData[nextYear] = emptyPeriods(); });
           state.years.push(nextYear);
           selectedYear = nextYear;
@@ -1853,7 +1871,7 @@ function renderDashboard(){
     const tr = document.createElement("tr");
     const stt = evalStatus(st, selectedYear, dashboardPeriod);
     tr.innerHTML = `
-      <td class="name-col sm-sticky">${st.name}</td>
+      <td class="name-col sm-sticky">${esc(st.name)}</td>
       <td><span class="st-chip ${stt}">${EVAL_STATUS_LABEL[stt]}</span></td>
       <td><span class="self-chip${period.selfSubmitted?" on":""}">${period.selfSubmitted ? "済" : "未"}</span></td>
       <td style="font-weight:800;color:${period.exempt ? "var(--gray-ink)" : "var(--ember-dark)"};">${formatTotal(period)}</td>
@@ -1863,11 +1881,11 @@ function renderDashboard(){
         const cls = scoreClass(v, it.max);
         return `<td><span class="score-cell ${cls}">${v}/${it.max}</span></td>`;
       }).join("")}
-      <td>${st.code}</td>
-      <td>${st.employType}</td>
-      <td><span class="aff-chip ${affClass(st.affiliation)}">${st.affiliation}</span></td>
+      <td>${esc(st.code)}</td>
+      <td>${esc(st.employType)}</td>
+      <td><span class="aff-chip ${affClass(st.affiliation)}">${esc(st.affiliation)}</span></td>
       <td style="color:var(--muted);font-size:11px;">${computeTenureText(st.hireDate)}</td>
-      <td>${period.evaluator || "-"}</td>
+      <td>${esc(period.evaluator || "-")}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -1903,7 +1921,7 @@ function renderDashboard(){
     bulkBtn.textContent = `入力済みの${unconfirmedCount}名を一括確定`;
     bulkBtn.onclick = ()=>{
       showModal(`入力済みで未確定の${unconfirmedCount}名を、${selectedYear}年度 ${periodFull(dashboardPeriod)}として確定します。${notEntered.length ? `\n未入力の${notEntered.length}名は確定されません。` : ""}よろしいですか?`, async ()=>{
-        await takeSnapshot(`一括確定の前(${selectedYear}年度 ${periodName(dashboardPeriod)})`);
+        if(!(await snapshotOrAbort(`一括確定の前(${selectedYear}年度 ${periodName(dashboardPeriod)})`))) return;
         readyToConfirm.forEach(st=>{
           const pd = st.yearData[selectedYear][dashboardPeriod];
           if(!pd.confirmed){
@@ -1926,7 +1944,7 @@ function renderDashboard(){
     unBtn.textContent = `確定済みの${confirmedList.length}名の確定を解除`;
     unBtn.onclick = ()=>{
       showModal(`表示中の確定済み${confirmedList.length}名の確定を解除し、編集できる状態に戻します(点数はそのまま残ります)。よろしいですか?`, async ()=>{
-        await takeSnapshot(`確定の一括解除の前(${selectedYear}年度 ${periodName(dashboardPeriod)})`);
+        if(!(await snapshotOrAbort(`確定の一括解除の前(${selectedYear}年度 ${periodName(dashboardPeriod)})`))) return;
         confirmedList.forEach(st=>{
           const pd = st.yearData[selectedYear][dashboardPeriod];
           if(pd.confirmed){
@@ -2122,8 +2140,8 @@ function renderEntry(){
   const meta = document.createElement("div");
   meta.className = "meta-row";
   meta.innerHTML = `
-    <span>社員CD: <strong>${staffObj.code}</strong></span>
-    <span>雇用区分: <strong>${staffObj.employType}</strong></span>
+    <span>社員CD: <strong>${esc(staffObj.code)}</strong></span>
+    <span>雇用区分: <strong>${esc(staffObj.employType)}</strong></span>
     <span>評価時期: <strong>${selectedYear}年度 ${periodFull(entrySelectedPeriod)}</strong></span>
     <span>本人の自己評価: <span class="self-chip${periodData.selfSubmitted?" on":""}">${periodData.selfSubmitted ? "提出済み" : "未提出"}</span></span>
   `;
@@ -2141,7 +2159,7 @@ function renderEntry(){
   const evaluatorSelect = document.createElement("select");
   evaluatorSelect.disabled = locked;
   const evaluatorNames = state.staff.filter(s=>(s.isEvaluator || s.isAdmin) && s.id!==staffObj.id).map(s=>s.name); // 対象者本人は自己評価防止のため除外
-  evaluatorSelect.innerHTML = `<option value="">未選択</option>` + evaluatorNames.map(name=>`<option value="${name}" ${periodData.evaluator===name?"selected":""}>${name}</option>`).join("");
+  evaluatorSelect.innerHTML = `<option value="">未選択</option>` + evaluatorNames.map(name=>`<option value="${esc(name)}" ${periodData.evaluator===name?"selected":""}>${esc(name)}</option>`).join("");
   // 評価者が未選択なら、評価担当の人を初期値にする(保存した時点で記録される)
   if(!locked && !periodData.evaluator){
     const assigned = assignedEvaluatorOf(staffObj);
@@ -2456,9 +2474,9 @@ function buildScatterSVG(points){
     const px = xFor(p.months), py = yFor(p.pct);
     return `<g>
       <circle cx="${px}" cy="${py}" r="5" fill="#C1531B" fill-opacity="0.78" stroke="#9C4013" stroke-width="1">
-        <title>${p.label}:勤続${(p.months/12).toFixed(1)}年 ・ 達成率${p.pct}%</title>
+        <title>${esc(p.label)}:勤続${(p.months/12).toFixed(1)}年 ・ 達成率${p.pct}%</title>
       </circle>
-      <text x="${px+7}" y="${py+3}" font-size="9" fill="#2B2420">${p.label}</text>
+      <text x="${px+7}" y="${py+3}" font-size="9" fill="#2B2420">${esc(p.label)}</text>
     </g>`;
   }).join("");
   return `<svg viewBox="0 0 ${width} ${height}" width="100%" style="max-width:800px;display:block;">
@@ -2671,9 +2689,9 @@ function renderPersonal(){
   const meta = document.createElement("div");
   meta.className = "meta-row";
   meta.innerHTML = `
-    <span>社員CD: <strong>${staffObj.code}</strong></span>
-    <span>雇用区分: <strong>${staffObj.employType}</strong></span>
-    <span>所属: <strong>${staffObj.affiliation}</strong></span>
+    <span>社員CD: <strong>${esc(staffObj.code)}</strong></span>
+    <span>雇用区分: <strong>${esc(staffObj.employType)}</strong></span>
+    <span>所属: <strong>${esc(staffObj.affiliation)}</strong></span>
     <span>勤続: <strong>${computeTenureText(staffObj.hireDate)}</strong></span>
   `;
   reportCard.appendChild(meta);
@@ -2741,7 +2759,7 @@ function renderPersonal(){
     const pd = staffObj.yearData[selectedYear][p];
     const box = document.createElement("div");
     box.style.cssText = "background:var(--cream);border:1px solid var(--line);border-radius:8px;padding:10px 12px;";
-    box.innerHTML = `<div style="font-size:11.5px;font-weight:800;color:var(--muted);margin-bottom:4px;">${periodName(p)}のコメント</div><div style="font-size:13px;white-space:pre-wrap;">${pd.comment ? pd.comment.replace(/</g,"&lt;") : '<span style="color:var(--muted);">(なし)</span>'}</div>`;
+    box.innerHTML = `<div style="font-size:11.5px;font-weight:800;color:var(--muted);margin-bottom:4px;">${periodName(p)}のコメント</div><div style="font-size:13px;white-space:pre-wrap;">${pd.comment ? esc(pd.comment) : '<span style="color:var(--muted);">(なし)</span>'}</div>`;
     commentWrap.appendChild(box);
   });
   reportCard.appendChild(commentWrap);
@@ -2785,7 +2803,7 @@ function renderPersonal(){
   const radarLegend = document.createElement("div");
   radarLegend.style.cssText = "display:flex;gap:16px;justify-content:center;margin-top:4px;font-size:11.5px;color:var(--muted);flex-wrap:wrap;";
   radarLegend.innerHTML = `
-    <span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:12px;height:12px;background:var(--ember);border-radius:3px;display:inline-block;"></span>${staffObj.name}</span>
+    <span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:12px;height:12px;background:var(--ember);border-radius:3px;display:inline-block;"></span>${esc(staffObj.name)}</span>
     <span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:16px;height:0;border-top:2px dashed var(--muted);display:inline-block;"></span>${STORE_SHORT}平均</span>
   `;
   radarBox.appendChild(radarLegend);
@@ -2832,11 +2850,11 @@ function renderGoalTraining(){
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
       <div>
         <div style="font-size:12px;color:var(--muted);font-weight:700;margin-bottom:4px;">本人の目標宣言</div>
-        <div style="font-size:14px;font-weight:700;white-space:pre-wrap;">${prevPd?.selfGoal ? prevPd.selfGoal.replace(/</g,"&lt;") : "(未設定)"}</div>
+        <div style="font-size:14px;font-weight:700;white-space:pre-wrap;">${prevPd?.selfGoal ? esc(prevPd.selfGoal) : "(未設定)"}</div>
       </div>
       <div>
         <div style="font-size:12px;color:var(--muted);font-weight:700;margin-bottom:4px;">評価者の目標設定</div>
-        <div style="font-size:14px;font-weight:700;white-space:pre-wrap;">${prevPd?.evaluatorGoal ? prevPd.evaluatorGoal.replace(/</g,"&lt;") : "(未設定)"}</div>
+        <div style="font-size:14px;font-weight:700;white-space:pre-wrap;">${prevPd?.evaluatorGoal ? esc(prevPd.evaluatorGoal) : "(未設定)"}</div>
       </div>
     </div>
   `;
@@ -2946,8 +2964,8 @@ const ANALYSIS_MODULES = [
         const left = document.createElement("div");
         const namesHTML = r.holders.map(h=>
           h.isPerfect
-            ? `<span style="color:var(--gold);font-weight:800;">${h.staff.name}</span>`
-            : `<span>${h.staff.name}</span>`
+            ? `<span style="color:var(--gold);font-weight:800;">${esc(h.staff.name)}</span>`
+            : `<span>${esc(h.staff.name)}</span>`
         ).join("、");
         left.innerHTML = `<div style="font-weight:800;font-size:13.5px;">${r.item.name} <span style="font-size:11px;color:var(--muted);font-weight:400;">(${catLabel})</span></div>` +
           (r.holders.length>0 ? `<div style="font-size:12px;color:var(--muted);margin-top:3px;">できる人:${namesHTML}</div>` : "");
@@ -3078,7 +3096,7 @@ function renderShiftSkillCheck(date){
   findings.forEach(f=>{
     const row = document.createElement("div");
     row.style.cssText = "padding:10px 4px;border-bottom:1px solid var(--line);";
-    row.innerHTML = `<div style="font-weight:800;font-size:13px;">${hourLabel(f.hour)} ・ ${f.catLabel} ・ <span style="color:#B23A2E;">${f.itemName}ができる人が0人</span></div><div style="font-size:12px;color:var(--muted);margin-top:3px;">配置されている人:${f.presentNames.join("、")}</div>`;
+    row.innerHTML = `<div style="font-weight:800;font-size:13px;">${hourLabel(f.hour)} ・ ${f.catLabel} ・ <span style="color:#B23A2E;">${f.itemName}ができる人が0人</span></div><div style="font-size:12px;color:var(--muted);margin-top:3px;">配置されている人:${f.presentNames.map(esc).join("、")}</div>`;
     container.appendChild(row);
   });
 
@@ -3317,12 +3335,12 @@ function buildShiftGridSVG(shiftData){
 
   const rowParts = parsedStaff.map((s,i)=>{
     const y = padTop + i*rowH;
-    const nameLabel = `<text x="${padLeft-8}" y="${y+rowH/2+4}" font-size="10.5" fill="#2B2420" text-anchor="end">${s.name}</text>`;
+    const nameLabel = `<text x="${padLeft-8}" y="${y+rowH/2+4}" font-size="10.5" fill="#2B2420" text-anchor="end">${esc(s.name)}</text>`;
     const bars = s.segs.map(seg=>{
       const x1 = xFor(seg.startMin), x2 = xFor(seg.endMin);
       const color = labelToColor[seg.label] || "#999";
-      return `<rect x="${x1}" y="${y+3}" width="${Math.max(1,x2-x1)}" height="${rowH-8}" fill="${color}" rx="2">
-        <title>${s.name}:${seg.label} ${seg.start||""}</title>
+      return `<rect x="${x1}" y="${y+3}" width="${Math.max(1,x2-x1)}" height="${rowH-8}" fill="${safeColor(color)}" rx="2">
+        <title>${esc(s.name)}:${esc(seg.label)} ${esc(seg.start||"")}</title>
       </rect>`;
     }).join("");
     const rowLine = `<line x1="${padLeft}" y1="${y+rowH}" x2="${width-padRight}" y2="${y+rowH}" stroke="#F5F0E6" stroke-width="1"/>`;
@@ -3466,9 +3484,14 @@ function renderShifts(){
           e.stopPropagation();
           showModal(`${d}のシフトデータを削除します。元に戻せません。よろしいですか?`, async ()=>{
             try{
-              await set(ref(db, `stores/${STORE_ID}/shifts/${d}`), null);
-              await set(ref(db, `stores/${STORE_ID}/shiftDates/${d}`), null);
-            }catch(err){ console.error(err); }
+              // シフト本体と日付の一覧を1回でまとめて消す(片方だけ消えた半端な状態を作らない)
+              await update(ref(db, `stores/${STORE_ID}`), {[`shifts/${d}`]: null, [`shiftDates/${d}`]: null});
+            }catch(err){
+              // 以前は失敗しても「削除しました」と表示していた
+              console.error("シフトの削除に失敗", err);
+              showModal(`${d}のシフトを削除できませんでした。\n通信状況を確認して、もう一度やり直してください。`, ()=>{}, {confirmLabel:"わかりました", cancelLabel:"閉じる"});
+              return;
+            }
             delete shiftDataCache[d];
             if(shiftDateListCache) shiftDateListCache = shiftDateListCache.filter(x=>x!==d);
             if(shiftSelectedDate === d) shiftUploadStatus = null;
@@ -3515,7 +3538,7 @@ function renderShifts(){
     Object.entries(labelToColor).forEach(([label, color])=>{
       const span = document.createElement("span");
       span.style.cssText = "display:inline-flex;align-items:center;gap:5px;";
-      span.innerHTML = `<span style="width:10px;height:10px;background:${color};border-radius:3px;display:inline-block;"></span>${label}`;
+      span.innerHTML = `<span style="width:10px;height:10px;background:${safeColor(color)};border-radius:3px;display:inline-block;"></span>${esc(label)}`;
       legendWrap.appendChild(span);
     });
     gridCard.appendChild(legendWrap);
@@ -3600,13 +3623,13 @@ const STATUS_META = {
   if(editingStaff){
     const editCard = document.createElement("div");
     editCard.className = "card";
-    editCard.innerHTML = `<div style="font-weight:800;font-size:15px;margin-bottom:12px;">${editingStaff.name}さんを編集</div>`;
+    editCard.innerHTML = `<div style="font-weight:800;font-size:15px;margin-bottom:12px;">${esc(editingStaff.name)}さんを編集</div>`;
     const form = document.createElement("div");
     form.className = "edit-form";
     form.innerHTML = `
       <div class="row2">
-        <div style="flex:2;"><label>氏名</label><input class="se-name" type="text" value="${editingStaff.name}"></div>
-        <div style="flex:1;"><label>社員CD</label><input class="se-code" type="text" value="${editingStaff.code}"></div>
+        <div style="flex:2;"><label>氏名</label><input class="se-name" type="text" value="${esc(editingStaff.name)}"></div>
+        <div style="flex:1;"><label>社員CD</label><input class="se-code" type="text" value="${esc(editingStaff.code)}"></div>
       </div>
       <div class="row2">
         <div style="flex:1;"><label>雇用区分</label><select class="se-type">
@@ -3617,7 +3640,7 @@ const STATUS_META = {
         </select></div>
       </div>
       <div class="row2">
-        <div style="flex:1;"><label>入社日</label><input class="se-hire" type="date" value="${editingStaff.hireDate||""}"></div>
+        <div style="flex:1;"><label>入社日</label><input class="se-hire" type="date" value="${esc(editingStaff.hireDate||"")}"></div>
         <div style="flex:1;"><label>状態</label><select class="se-status">
           <option value="active" ${editingStaff.status==="active"?"selected":""}>在籍</option>
           <option value="leave" ${editingStaff.status==="leave"?"selected":""}>休職</option>
@@ -3636,7 +3659,7 @@ const STATUS_META = {
       if(editingStaff.name === currentPersonName){ showToast("ログイン中の自分自身は削除できません"); return; }
       showModal(`${editingStaff.name}さんを削除します。過去の評価データ・一言メモも一緒に消えます。よろしいですか?\n(削除の直前の状態はバックアップに残るので、間違えた場合はスタッフマスタ下の「バックアップ」から戻せます)`, async ()=>{
         const delId = String(editingStaff.id);
-        await takeSnapshot(`スタッフ削除の前(${editingStaff.name})`);
+        if(!(await snapshotOrAbort(`スタッフ削除の前(${editingStaff.name})`))) return;
         deletedStaffIds.add(delId);
         try{
           await set(ref(db, `stores/${STORE_ID}/ats/deletedStaff/${delId}`), {name: editingStaff.name, code: editingStaff.code || "", ts: new Date().toISOString(), by: currentPersonName || ""});
@@ -3691,7 +3714,7 @@ const STATUS_META = {
   [...state.staff].sort((a,b)=> Number(a.code)-Number(b.code)).forEach(st=>{
     const tr = document.createElement("tr");
     const meta = STATUS_META[st.status] || STATUS_META.active;
-    tr.innerHTML = `<td class="name-col sm-sticky" style="${st.hasLogin ? "" : "color:var(--muted);"}">${st.name}</td>`;
+    tr.innerHTML = `<td class="name-col sm-sticky" style="${st.hasLogin ? "" : "color:var(--muted);"}">${esc(st.name)}</td>`;
     // 権限:押すとON/OFFが切り替わるラベル
     const roleTd = document.createElement("td");
     const roleWrap = document.createElement("div");
@@ -3721,7 +3744,7 @@ const STATUS_META = {
       const sel = document.createElement("select");
       sel.className = "assign-select";
       const current = assignedEvaluatorOf(st);
-      sel.innerHTML = `<option value="">未割り当て</option>` + activeEvaluators.filter(ev=>ev.id!==st.id).map(ev=>`<option value="${ev.id}">${ev.name}</option>`).join("");
+      sel.innerHTML = `<option value="">未割り当て</option>` + activeEvaluators.filter(ev=>ev.id!==st.id).map(ev=>`<option value="${esc(ev.id)}">${esc(ev.name)}</option>`).join("");
       sel.value = current ? current.id : "";
       if(!current) sel.classList.add("unset");
       sel.onchange = ()=>{
@@ -3741,10 +3764,10 @@ const STATUS_META = {
 
     tr.insertAdjacentHTML("beforeend", `
       <td><span class="aff-chip" style="${meta.style}">${meta.label}</span></td>
-      <td>${st.employType}</td>
-      <td>${st.affiliation}</td>
-      <td>${st.code}</td>
-      <td style="color:var(--muted);font-size:11px;">${st.hireDate ?? "-"}</td>
+      <td>${esc(st.employType)}</td>
+      <td>${esc(st.affiliation)}</td>
+      <td>${esc(st.code)}</td>
+      <td style="color:var(--muted);font-size:11px;">${esc(st.hireDate ?? "-")}</td>
     `);
     const loginTd = document.createElement("td");
     loginTd.innerHTML = st.hasLogin
@@ -3837,7 +3860,7 @@ function renderBackupCard(){
   entries.forEach(([key, meta])=>{
     const row = document.createElement("div");
     row.className = "assign-row";
-    row.innerHTML = `<div class="nm">${fmtBackupTime(meta.ts)}<div style="font-size:11.5px;color:var(--muted);font-weight:700;">${(meta.reason||"").replace(/</g,"&lt;")}${meta.by ? ` ・ ${meta.by}` : ""} ・ ${meta.staffCount ?? "-"}人</div></div>`;
+    row.innerHTML = `<div class="nm">${fmtBackupTime(meta.ts)}<div style="font-size:11.5px;color:var(--muted);font-weight:700;">${esc(meta.reason||"")}${meta.by ? ` ・ ${esc(meta.by)}` : ""} ・ ${meta.staffCount ?? "-"}人</div></div>`;
     const openBtn = document.createElement("button");
     openBtn.className = "btn-ghost";
     openBtn.textContent = backupOpenKey===key ? "閉じる" : "中身を見る";
@@ -3865,7 +3888,7 @@ function renderBackupDetail(key, meta){
   missing.forEach(s=>{
     const r = document.createElement("div");
     r.className = "assign-row";
-    r.innerHTML = `<div class="nm">${s.name}<span style="font-size:11.5px;color:var(--muted);font-weight:700;"> (${s.employType || ""}・${s.affiliation || ""})</span></div>`;
+    r.innerHTML = `<div class="nm">${esc(s.name)}<span style="font-size:11.5px;color:var(--muted);font-weight:700;"> (${esc(s.employType || "")}・${esc(s.affiliation || "")})</span></div>`;
     const b = document.createElement("button");
     b.className = "primary"; b.textContent = "この人を戻す";
     b.onclick = ()=> showModal(`${s.name}さんを、このバックアップ時点の内容(評価・メモ含む)で戻します。よろしいですか?`, async ()=>{
@@ -3894,7 +3917,7 @@ function renderBackupDetail(key, meta){
   const wb = document.createElement("button");
   wb.className = "btn-danger"; wb.textContent = "全体をこの時点に戻す";
   wb.onclick = ()=> showModal(`データ全体を ${fmtBackupTime(meta.ts)} の状態に戻します。\nこれより後に全員が入力した評価・変更はすべて消えます。本当によろしいですか?`, async ()=>{
-    await takeSnapshot(`全体復元の前(${fmtBackupTime(meta.ts)}の状態に戻す)`);
+    if(!(await snapshotOrAbort(`全体復元の前(${fmtBackupTime(meta.ts)}の状態に戻す)`))) return;
     const ids = bStaff.map(s=>String(s.id)).filter(id=>deletedStaffIds.has(id));
     for(const id of ids){ deletedStaffIds.delete(id); try{ await set(ref(db, `stores/${STORE_ID}/ats/deletedStaff/${id}`), null); }catch(e){} }
     const years = Array.isArray(data.years) && data.years.length ? data.years : state.years;
@@ -4044,7 +4067,7 @@ function openEntryFor(staffId, period){
 function todoRow(staffObj, status, onClick, label, extra){
   const b = document.createElement("button");
   b.className = "todo-row";
-  b.innerHTML = `<span class="nm">${staffObj.name}</span>${extra||""}<span class="st-chip ${status}">${label || EVAL_STATUS_LABEL[status]}</span><span class="arrow">›</span>`;
+  b.innerHTML = `<span class="nm">${esc(staffObj.name)}</span>${extra||""}<span class="st-chip ${status}">${label || EVAL_STATUS_LABEL[status]}</span><span class="arrow">›</span>`;
   b.onclick = onClick;
   return b;
 }
@@ -4130,7 +4153,7 @@ function renderHomeAdmin(){
       const n = k => st.filter(x=>x===k).length;
       const row = document.createElement("div");
       row.className = "assign-row";
-      row.innerHTML = `<div class="nm">${ev.name}</div>
+      row.innerHTML = `<div class="nm">${esc(ev.name)}</div>
         <span class="st-chip todo" style="${n("todo")?"":"visibility:hidden"}">未入力 ${n("todo")}</span>
         <span class="st-chip doing" style="${n("doing")?"":"visibility:hidden"}">入力中 ${n("doing")}</span>
         <span class="st-chip done">確定 ${n("done")+n("skip")}/${list.length}</span>`;
@@ -4291,7 +4314,7 @@ function renderMyPage(){
   commentCard.className = "card";
   commentCard.innerHTML = `
     <div class="home-card-title" style="margin-bottom:6px;">評価者からのコメント</div>
-    <div style="font-size:14px;white-space:pre-wrap;line-height:1.7;">${pd.comment ? pd.comment.replace(/</g,"&lt;") : '<span style="color:var(--muted);">(コメントはありません)</span>'}</div>
+    <div style="font-size:14px;white-space:pre-wrap;line-height:1.7;">${pd.comment ? esc(pd.comment) : '<span style="color:var(--muted);">(コメントはありません)</span>'}</div>
   `;
   wrap.appendChild(commentCard);
 
@@ -4367,7 +4390,6 @@ function renderMyPage(){
   if(prevSelfGoal || prevEvaluatorGoal){
     const goalCard = document.createElement("div");
     goalCard.className = "card";
-    const esc = s => s.replace(/</g,"&lt;");
     goalCard.innerHTML = `
       <div class="home-card-title" style="margin-bottom:10px;">前回立てた、今回までの目標</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;">
