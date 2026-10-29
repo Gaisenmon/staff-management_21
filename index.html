@@ -326,7 +326,7 @@
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script type="module">
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getDatabase, ref, set, get, onValue, runTransaction, update, connectDatabaseEmulator } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+import { getDatabase, ref, set, get, onValue, runTransaction, update, connectDatabaseEmulator, goOffline, goOnline } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, createUserWithEmailAndPassword, updatePassword, reauthenticateWithCredential, EmailAuthProvider, connectAuthEmulator } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 /* ==============================================================
@@ -710,10 +710,24 @@ function mergeHistoryForSave(latest, local, base){
 }
 /* 保存は1つずつ順番に行う。連続操作で保存が並行すると、古い取得結果で新しい変更を上書きしうるため。 */
 let saveChain = Promise.resolve();
+/* 戻り値:保存できたら true、できなかったら false(呼び出し側は、false なら画面を進めない) */
 function saveState(){
   saveChain = saveChain.then(saveStateNow, saveStateNow);
   return saveChain;
 }
+/* 保存できなかったとき:未保存の印を付け直し(ページを閉じようとすると警告が出る)、消えない案内を出す。
+   以前は1.8秒で消える表示だけで、未保存の印も先に外れていたため、気づかないまま入力を失うことがあった */
+let saveFailedModalOpen = false;
+function notifySaveFailed(){
+  markDirty();
+  if(saveFailedModalOpen) return;
+  saveFailedModalOpen = true;
+  showModal("保存できませんでした。\n通信状況を確認して、もう一度保存してください。\n(入力した内容は、この画面を閉じなければ残っています)", async ()=>{
+    saveFailedModalOpen = false;
+    if(await saveState()) clearDirty();
+  }, {confirmLabel:"もう一度保存", cancelLabel:"閉じる", onCancel: ()=>{ saveFailedModalOpen = false; }});
+}
+const SAVE_WAIT_NOTICE_MS = 10000; // これ以上かかったら「通信待ち」と知らせる
 /* 保存:手元で変えた部分だけを、スタッフ1人ずつ・部分ごとに書き込む(段階3)。
    ・プロフィール(管理者だけ)と評価(管理者・評価者)は、その部分をトランザクションで「読み込み→合成→書き込み」する。
      2台がほぼ同時に保存しても、後の方は先の方の結果の上に合成し直されるので、どちらかの変更が消えることはない。
@@ -786,13 +800,22 @@ async function saveStateNow(){
       Array.from(new Set([...(Array.isArray(cur) ? cur : []), ...localYears])).sort()
     , {applyLocally:false}).then(committed));
   }
-  const results = await Promise.allSettled(writes);
+  // 通信が切れていると、書き込みは失敗にならず「つながるまで待つ」。待ちが長いときは、その間も入力が失われないよう知らせる
+  const settled = Promise.allSettled(writes);
+  let waitNoticeGen = null;
+  const waitTimer = setTimeout(()=>{
+    unsaved = true; waitNoticeGen = ++dirtyGen; // この時点の印。終わるまでに新しい入力が無ければ、終わったときに外す
+    showModal("通信がつながっていないため、保存がまだ終わっていません。\nつながると自動で保存されます。それまで、この画面を閉じないでください。", ()=>{}, {confirmLabel:"わかりました", cancelLabel:"閉じる"});
+  }, SAVE_WAIT_NOTICE_MS);
+  const results = await settled;
+  clearTimeout(waitTimer);
   const failed = results.filter(r=> r.status === "rejected");
   if(failed.length){
     failed.forEach(r=> console.error("save failed", r.reason));
-    showToast("保存に失敗しました。通信状況を確認してもう一度保存してください");
-    return;
+    notifySaveFailed();
+    return false;
   }
+  if(waitNoticeGen !== null && dirtyGen === waitNoticeGen) clearDirty(); // 通信待ちのあとで保存が終わった
 
   // ---- 変更履歴(1件ずつ。一般スタッフも追加はできるが、読めるのは管理者・評価者だけ) ----
   const baseHistIds = new Set((lastServerHistory||[]).map(h=>h.id));
@@ -812,7 +835,8 @@ async function saveStateNow(){
       console.error("history save failed", e);
     }
   }
-  showToast("保存しました(全員に共有されます)");
+  showToast(waitNoticeGen !== null ? "通信が戻り、保存が終わりました" : "保存しました(全員に共有されます)");
+  return true;
 }
 function showToast(msg){
   const t = document.getElementById("toast");
@@ -1308,13 +1332,15 @@ function diffAndLog(staffObj, year, period, before, after){
    (editingFormは入力欄にフォーカスしただけでもONになるため、未保存の判定には別のフラグを使う) */
 let unsaved = false;
 let leaveGuard = null; // 今の画面の {save(), discard()}。各画面の描画時に設定される
-function markDirty(){ unsaved = true; editingForm = true; }
+let dirtyGen = 0;
+function markDirty(){ unsaved = true; editingForm = true; dirtyGen++; }
 function clearDirty(){ unsaved = false; editingForm = false; }
 function guardedNavigate(go, onStay){
   if(!unsaved || !leaveGuard){ go(); return; }
   const g = leaveGuard;
   showModal("保存していない変更があります。", async ()=>{
-    await g.save();
+    const ok = await g.save();
+    if(ok === false) return; // 保存できなかったら移動しない(入力を残したまま、保存失敗の案内を出す)
     clearDirty();
     go();
   }, {
@@ -4441,7 +4467,7 @@ function renderMySelfEval(){
   saveBtn.onclick = async ()=>{
     pd.selfSubmitted = true;
     clearDirty();
-    await saveState();
+    if(!(await saveState())) return; // 保存できなかったら、この画面に残る(保存失敗の案内が出る)
     myPagePeriod = mySelfPeriod;
     activeTab = "myPage";
     render();
@@ -5007,7 +5033,7 @@ function startApp(){
 }
 
 /* 開発用:エミュレーターにつないだときだけ、動作確認のために中身を外から触れるようにする(公開ページでは作られない) */
-if(USE_EMULATOR) window.__atsTest = { get state(){ return state; }, saveState, render, currentStaffObj, isCurrentUserAdmin, isPrivilegedUser, logGenericChange };
+if(USE_EMULATOR) window.__atsTest = { get state(){ return state; }, get unsaved(){ return unsaved; }, saveState, render, currentStaffObj, isCurrentUserAdmin, isPrivilegedUser, logGenericChange, goOffline: ()=> goOffline(db), goOnline: ()=> goOnline(db) };
 
 /* ページを再読み込みするボタン。ホーム画面に追加してアプリ化して使うと
    Safariの更新ボタンが使えなくなるため、代わりにアプリ内に用意している。 */
